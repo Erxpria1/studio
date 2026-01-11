@@ -157,6 +157,7 @@ function FormContent() {
                                 fullText += (textContent.items as any[]).map((item: any) => item.str).join(' ') + '\n';
                             }
                             
+                            // Handle UTF-8 characters correctly for btoa
                             const textAsDataUri = `data:text/plain;base64,${btoa(unescape(encodeURIComponent(fullText)))}`;
 
                             setFileData(textAsDataUri);
@@ -301,7 +302,7 @@ function FormContent() {
               msg.type === 'briefing' && 'text-primary'
             )}>
               {msg.content}
-              {msg.type === 'ai_step' && showNextStepButton && (
+              {msg.type === 'ai_step' && showNextStepButton && activeState.currentStepIndex === msg.stepNumber! - 1 && (
                  <Button onClick={handleNextStep} disabled={isProcessing} size="icon" className="absolute bottom-2 right-2 bg-yellow-500 hover:bg-yellow-600 text-black rounded-full h-10 w-10">
                     <Folder className="h-5 w-5" />
                  </Button>

@@ -32,13 +32,14 @@ const turkishCheckerPrompt = ai.definePrompt({
   name: 'turkishCheckerPrompt',
   input: {schema: TurkishCheckerInputSchema},
   output: {schema: TurkishCheckerOutputSchema},
-  prompt: `Sen bir Türkçe dil uzmanısın. Sana verilen metnin dilbilgisi ve anlam açısından doğruluğunu kontrol et.
-Eğer hatalar varsa düzelt ve metnin en doğru halini 'correctedText' alanında döndür. Metnin orijinali doğruysa, 'correctedText' olarak orijinal metni döndür.
-'isCorrect' alanında ise metnin en başta doğru olup olmadığını belirt.
+  prompt: `You are a Turkish language expert. Check the provided text for grammatical correctness and meaning.
+If there are errors, correct them and return the most accurate version of the text in the 'correctedText' field.
+If the original text is correct, return the original text in 'correctedText'.
+In the 'isCorrect' field, indicate whether the text was correct from the beginning.
 
-Kontrol edilecek metin: {{{text}}}
+Text to check: {{{text}}}
 
-Cevabını sadece ve sadece output şemasına uygun JSON formatında ver.`,
+Your response must be ONLY in the JSON format matching the output schema.`,
 });
 
 const turkishCheckerFlow = ai.defineFlow(

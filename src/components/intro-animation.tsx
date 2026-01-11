@@ -24,7 +24,7 @@ export function IntroAnimation({ onComplete }: { onComplete: () => void }) {
       handleComplete();
     }, 8000); // Increased time for the new animation
     return () => clearTimeout(timer);
-  }, []);
+  }, [onComplete]);
 
   // Matrix Rain Effect
   useEffect(() => {
@@ -163,9 +163,9 @@ export function IntroAnimation({ onComplete }: { onComplete: () => void }) {
             e.stopPropagation();
             handleComplete();
           }}
-          className="absolute top-4 right-4 z-50 bg-accent text-accent-foreground hover:bg-accent/80"
+          className="absolute top-4 right-4 z-50 bg-accent/80 text-accent-foreground font-bold font-code border-2 border-accent shadow-[0_0_10px_theme(colors.accent),0_0_20px_theme(colors.accent)] hover:bg-accent hover:text-black hover:shadow-[0_0_15px_theme(colors.accent),0_0_30px_theme(colors.accent)] transition-all duration-300"
         >
-          Geç
+          GEÇ
         </Button>
 
         <main className="scene">
@@ -205,7 +205,7 @@ export function IntroAnimation({ onComplete }: { onComplete: () => void }) {
             --bg-color: #050505;
             --cube-border: rgba(0, 255, 255, 0.2);
             --text-color: #ffffff;
-            --accent-color: #00ffcc;
+            --accent-color-glow: hsl(var(--accent));
         }
         .scene {
             position: relative;
@@ -282,9 +282,9 @@ export function IntroAnimation({ onComplete }: { onComplete: () => void }) {
             text-shadow: 
                 0 0 5px #fff,
                 0 0 10px #fff,
-                0 0 20px var(--accent-color),
-                0 0 40px var(--accent-color),
-                0 0 80px var(--accent-color);
+                0 0 20px var(--accent-color-glow),
+                0 0 40px var(--accent-color-glow),
+                0 0 80px var(--accent-color-glow);
             animation: textPulse 3s infinite ease-in-out;
         }
         .system-log {
@@ -300,11 +300,11 @@ export function IntroAnimation({ onComplete }: { onComplete: () => void }) {
             pointer-events: none;
             background: rgba(0,0,0,0.3);
             padding: 10px;
-            border-left: 2px solid var(--accent-color);
+            border-left: 2px solid var(--accent-color-glow);
         }
         .log-line { display: block; }
         .log-highlight {
-            color: var(--accent-color);
+            color: var(--accent-color-glow);
             font-weight: bold;
         }
         @keyframes rotateOrbit {
