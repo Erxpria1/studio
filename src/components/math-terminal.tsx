@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useCallback, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { submitQuestion, type FormState } from '@/app/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -162,7 +162,7 @@ function FormContent() {
                 
                  // Use a more robust method to convert to base64 to avoid character encoding issues
                 const binary = new Uint8Array(fullText.split('').map(c => c.charCodeAt(0)));
-                const base64 = btoa(String.fromCharCode.apply(null, Array.from(binary)));
+                const base64 = btoa(String.fromCharCode(...Array.from(binary)));
                 const textAsDataUri = `data:text/plain;base64,${base64}`;
 
                 setFileData(textAsDataUri);
@@ -196,117 +196,147 @@ function FormContent() {
 
   const isProcessing = isPending;
 
-  
+  const handleNextStep = useCallback((stepData: {
+    question: string;
+    currentStepIndex: number;
+    totalSteps: number;
+    fullSolution: SolutionStep[];
+  }) => {
+    if (isProcessing) return;
+
+    setMessages(prev => [...prev, {
+      id: Date.now().toString() + '-briefing',
+      type: 'briefing',
+      content: <BriefingDisplay />
+    }]);
+
+    const formData = new FormData();
+    formData.append('next_step', 'true');
+    formData.append('question', stepData.question);
+    formData.append('current_step_index', stepData.currentStepIndex.toString());
+    formData.append('total_steps', stepData.totalSteps.toString());
+    formData.append('full_solution_json', JSON.stringify(stepData.fullSolution));
+
+    formAction(formData);
+  }, [isProcessing, formAction]);
+
   useEffect(() => {
     if (state.id === '0') return;
 
-    const lastMessage = messages[messages.length - 1];
-    const isBriefingActive = lastMessage?.type === 'briefing';
+    setMessages(prevMessages => {
+      const lastMessage = prevMessages[prevMessages.length - 1];
+      const isBriefingActive = lastMessage?.type === 'briefing';
 
-    if (state.status === 'error') {
-      const newMessages = isBriefingActive ? messages.slice(0, -1) : messages;
-      setMessages([
-          ...newMessages,
-          { id: state.id + '-error', type: 'error', content: `Hata: ${state.error}` }
-      ]);
-      formRef.current?.reset();
-      setFileData(null);
-    } else if (state.status === 'step_by_step' && state.currentStep) {
-        const { currentStep, currentStepIndex, totalSteps, fullSolution } = state;
-        
-        // Always start with user message if it's the first step
-        let newMessages: Message[] = [];
-        if (currentStepIndex === 0 && state.question) {
-             newMessages.push({ id: state.id + '-user', type: 'user', content: `> ${state.question}` });
-        } else {
-            newMessages = isBriefingActive ? messages.slice(0, -1) : messages;
-        }
+      if (state.status === 'error') {
+        const newMessages = isBriefingActive ? prevMessages.slice(0, -1) : prevMessages;
+        formRef.current?.reset();
+        setFileData(null);
+        return [
+            ...newMessages,
+            { id: state.id + '-error', type: 'error', content: `Hata: ${state.error}` }
+        ];
+      } else if (state.status === 'step_by_step' && state.currentStep) {
+          const { currentStep, currentStepIndex, totalSteps, fullSolution } = state;
 
-        const showNextBtn = currentStepIndex !== undefined && totalSteps !== undefined && currentStepIndex < totalSteps - 1;
+          // Always start with user message if it's the first step
+          let newMessages: Message[] = [];
+          if (currentStepIndex === 0 && state.question) {
+               newMessages.push({ id: state.id + '-user', type: 'user', content: `> ${state.question}` });
+          } else {
+              newMessages = isBriefingActive ? prevMessages.slice(0, -1) : prevMessages;
+          }
 
-        const newStepMessage: Message = {
-            id: `${state.id}-step-${currentStepIndex}`,
-            type: 'ai_step',
-            content: (
-                <div className="border border-primary/30 rounded-md p-4 bg-black/20 relative pb-12">
-                    <Typewriter
-                        text={cleanText(`Adım ${currentStep.stepNumber}: ${currentStep.explanation}`)}
-                        speed={10}
-                    />
-                    <div className="font-code text-accent mt-2 p-2 bg-black/20 rounded-md">
-                        <Latex formula={currentStep.formula} />
-                    </div>
-                    {showNextBtn && (
-                       <form action={formAction}>
-                            <input type="hidden" name="next_step" value="true" />
-                            <input type="hidden" name="question" value={state.question} />
-                            <input type="hidden" name="current_step_index" value={currentStepIndex} />
-                            <input type="hidden" name="total_steps" value={totalSteps} />
-                            <input type="hidden" name="full_solution_json" value={JSON.stringify(fullSolution)} />
-                            <Button type="submit" disabled={isProcessing} size="icon" variant="ghost" className="absolute bottom-2 right-2 text-yellow-500 hover:text-yellow-400 h-8 w-8">
-                               <ArrowRightCircle className="h-6 w-6" />
-                            </Button>
-                        </form>
-                    )}
-                </div>
-            ),
-            stepNumber: currentStep.stepNumber
-        };
-        
-        // If this step is already in messages, replace it. Otherwise, add it.
-        const existingStepIndex = newMessages.findIndex(m => m.type === 'ai_step' && m.stepNumber === currentStep.stepNumber);
-        if (existingStepIndex > -1) {
-            newMessages[existingStepIndex] = newStepMessage;
-        } else {
-            newMessages.push(newStepMessage);
-        }
+          const showNextBtn = currentStepIndex !== undefined && totalSteps !== undefined && currentStepIndex < totalSteps - 1;
 
-        setMessages(newMessages);
-        
-        if (state.currentStepIndex === 0) {
-            formRef.current?.reset();
-            setFileData(null);
-        }
-    } else if (state.status === 'complete') {
-        const newMessages = isBriefingActive ? messages.slice(0, -1) : messages;
-        const verificationMsg: Message = {
-            id: state.id + '-verification',
-            type: 'verification',
-            content: (
-                <div className="flex items-start gap-2 p-4 border border-primary/20 rounded-md bg-black/20">
-                    {state.isCorrect ? <CheckCircle2 className="text-green-500 mt-1 h-5 w-5 flex-shrink-0" /> : <XCircle className="text-red-500 mt-1 h-5 w-5 flex-shrink-0" />}
-                    <Typewriter text={cleanText(state.verificationDetails)} speed={10} />
-                </div>
-            )
-        };
-        setMessages([...newMessages, verificationMsg]);
-    } else if(state.status === 'initial' || state.status === 'error') {
-         formRef.current?.reset();
-         setFileData(null);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
+          const newStepMessage: Message = {
+              id: `${state.id}-step-${currentStepIndex}`,
+              type: 'ai_step',
+              content: (
+                  <div className="border border-primary/30 rounded-md p-4 bg-black/20 relative pb-14 md:pb-12">
+                      <Typewriter
+                          text={cleanText(`Adım ${currentStep.stepNumber}: ${currentStep.explanation}`)}
+                          speed={10}
+                      />
+                      <div className="font-code text-accent mt-2 p-2 bg-black/20 rounded-md">
+                          <Latex formula={currentStep.formula} />
+                      </div>
+                      {showNextBtn && state.question && (
+                          <Button
+                              type="button"
+                              disabled={isProcessing}
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleNextStep({
+                                  question: state.question!,
+                                  currentStepIndex: currentStepIndex,
+                                  totalSteps: totalSteps,
+                                  fullSolution: fullSolution as SolutionStep[]
+                              })}
+                              className="absolute bottom-2 right-2 text-yellow-500 hover:text-yellow-400 min-h-[48px] min-w-[48px] md:h-10 md:w-10"
+                              aria-label="Sonraki adıma geç"
+                          >
+                              <ArrowRightCircle className="h-6 w-6" />
+                          </Button>
+                      )}
+                  </div>
+              ),
+              stepNumber: currentStep.stepNumber
+          };
 
-  const handleFormAction = (formData: FormData) => {
+          // If this step is already in messages, replace it. Otherwise, add it.
+          const existingStepIndex = newMessages.findIndex(m => m.type === 'ai_step' && m.stepNumber === currentStep.stepNumber);
+          if (existingStepIndex > -1) {
+              newMessages[existingStepIndex] = newStepMessage;
+          } else {
+              newMessages.push(newStepMessage);
+          }
+
+          if (state.currentStepIndex === 0) {
+              formRef.current?.reset();
+              setFileData(null);
+          }
+
+          return newMessages;
+      } else if (state.status === 'complete') {
+          const newMessages = isBriefingActive ? prevMessages.slice(0, -1) : prevMessages;
+          const verificationMsg: Message = {
+              id: state.id + '-verification',
+              type: 'verification',
+              content: (
+                  <div className="flex items-start gap-2 p-4 border border-primary/20 rounded-md bg-black/20">
+                      {state.isCorrect ? <CheckCircle2 className="text-green-500 mt-1 h-5 w-5 flex-shrink-0" /> : <XCircle className="text-red-500 mt-1 h-5 w-5 flex-shrink-0" />}
+                      <Typewriter text={cleanText(state.verificationDetails)} speed={10} />
+                  </div>
+              )
+          };
+          return [...newMessages, verificationMsg];
+      } else if(state.status === 'initial' || state.status === 'error') {
+           formRef.current?.reset();
+           setFileData(null);
+      }
+
+      return prevMessages;
+    });
+  }, [state, isProcessing, handleNextStep]);
+  
+  useEffect(() => {
+    viewportRef.current?.scrollTo({ top: viewportRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages, state.status]);
+
+  const handleFormSubmit = (formData: FormData) => {
     const question = formData.get('question');
-    const isNextStep = formData.get('next_step') === 'true';
 
     if (isProcessing) return;
-    
-    if (isNextStep) {
-         setMessages(prev => [...prev, { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}])
-    } else if (question) {
+
+    if (question) {
         setMessages([
             { id: Date.now().toString() + '-user', type: 'user', content: `> ${question}` },
             { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}
         ]);
     }
+
     formAction(formData);
   };
-  
-  useEffect(() => {
-    viewportRef.current?.scrollTo({ top: viewportRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, state.status]);
 
   const isTerminalOccupied = state.status !== 'initial' && state.status !== 'complete' && state.status !== 'error';
 
@@ -329,9 +359,9 @@ function FormContent() {
         </div>
       </ScrollArea>
       <div className="mt-4">
-        <form 
-            ref={formRef} 
-            action={handleFormAction}
+        <form
+            ref={formRef}
+            action={handleFormSubmit}
             className="relative"
         >
           <input type="hidden" name="fileData" value={fileData || ''} />
@@ -339,7 +369,7 @@ function FormContent() {
             <Input
               name="question"
               placeholder="> Bir matematik sorusu sorun... örn., 'x için çöz: 2x + 5 = 15'"
-              className="bg-background/50 border-primary/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-24 font-code"
+              className="bg-background/50 border-primary/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-20 md:pr-24 font-code"
               autoComplete="off"
               disabled={isProcessing || isTerminalOccupied}
             />
@@ -371,14 +401,14 @@ function FormContent() {
 
 export function MathTerminal() {
   return (
-    <Card className="w-full max-w-3xl h-[80vh] flex flex-col bg-card/80 backdrop-blur-sm border-primary/20 shadow-lg shadow-primary/10">
-      <CardHeader>
-        <CardTitle className="font-headline text-primary flex items-center gap-2">
-          <span>// MATEMATİK_SİBER_TERMINAL v1.0</span>
-          <span className="h-4 w-4 bg-primary animate-pulse rounded-full" />
+    <Card className="w-full max-w-full md:max-w-3xl h-[85vh] md:h-[80vh] flex flex-col bg-card/80 backdrop-blur-sm border-primary/20 shadow-lg shadow-primary/10">
+      <CardHeader className="pb-3 md:pb-6">
+        <CardTitle className="font-headline text-primary flex items-center gap-2 text-sm md:text-base">
+          <span className="truncate">// MATEMATİK_SİBER_TERMINAL v1.0</span>
+          <span className="h-3 w-3 md:h-4 md:w-4 bg-primary animate-pulse rounded-full flex-shrink-0" />
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden">
+      <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden px-3 md:px-6">
         <FormContent />
       </CardContent>
     </Card>

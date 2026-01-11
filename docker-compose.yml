@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # Tailscale service
+  tailscale:
+    image: tailscale/tailscale:latest
+    hostname: mathcyber-${TAILSCALE_HOSTNAME:-app}
+    container_name: mathcyber-tailscale
+    environment:
+      - TS_AUTHKEY=${TAILSCALE_AUTH_KEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SOCKET=/var/run/tailscale/tailscaled.sock
+      - TS_EXTRA_ARGS=${TAILSCALE_EXTRA_ARGS:---advertise-tags=tag:mathcyber}
+      - TS_USERSPACE=true
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    restart: unless-stopped
+    networks:
+      - mathcyber-network
+
+  # MathCyber Next.js application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mathcyber-app
+    environment:
+      - NODE_ENV=production
+      - PORT=9002
+    ports:
+      - "9002:9002"
+    volumes:
+      - ./public:/app/public:ro
+    restart: unless-stopped
+    depends_on:
+      - tailscale
+    networks:
+      - mathcyber-network
+    # Use Tailscale network namespace
+    network_mode: "service:tailscale"
+
+volumes:
+  tailscale-state:
+    driver: local
+
+networks:
+  mathcyber-network:
+    driver: bridge
