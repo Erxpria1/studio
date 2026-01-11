@@ -10,6 +10,7 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import { checkTurkish } from './turkish-checker';
+import { SolutionStepSchema } from '@/lib/schemas';
 
 const GenerateStepByStepSolutionInputSchema = z.object({
   question: z.string().describe('The mathematical question to be solved.'),
@@ -17,14 +18,6 @@ const GenerateStepByStepSolutionInputSchema = z.object({
   step: z.number().optional().describe("The specific step to generate. If not provided, all steps are generated.")
 });
 export type GenerateStepByStepSolutionInput = z.infer<typeof GenerateStepByStepSolutionInputSchema>;
-
-const SolutionStepSchema = z.object({
-  stepNumber: z.number().describe('The step number in the solution process.'),
-  explanation: z.string().describe('The verbal explanation for this step.'),
-  formula: z.string().describe('The mathematical formula or calculation for this step, formatted as a LaTeX string.'),
-});
-export type SolutionStep = z.infer<typeof SolutionStepSchema>;
-
 
 const GenerateStepByStepSolutionOutputSchema = z.object({
   solution: z.array(SolutionStepSchema).describe('An array of steps representing the step-by-step solution to the mathematical question.'),
@@ -39,7 +32,7 @@ const prompt = ai.definePrompt({
   name: 'generateStepByStepSolutionPrompt',
   input: {schema: GenerateStepByStepSolutionInputSchema},
   output: {schema: GenerateStepByStepSolutionOutputSchema},
-  prompt: `Sen adım adım çözüm açıklama konusunda uzman bir matematik çözücüsün. Aşağıdaki matematik sorusuna ayrıntılı, 3 adımlı bir çözüm sun. Her adım için, bir açıklama ve bir LaTeX formatında formül sağla.
+  prompt: `Sen adım adım çözüm açıklama konusunda uzman bir matematik çözücüsün. Aşağıdaki matematik sorusuna ayrıntılı, 3 adımlı bir çözüm sun. Her adım için, bir açıklama ve bir LaTeX formatında formül sağla. Cevabın SADECE Türkçe olmalı.
 {{#if step}}
 Sadece ${'{{{step}}}'}. adımı oluştur.
 {{/if}}

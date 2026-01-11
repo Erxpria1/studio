@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState, useOptimistic } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { submitQuestion, getNextStep, type FormState } from '@/app/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Typewriter } from '@/components/typewriter';
-import { CheckCircle2, XCircle, AlertTriangle, Send, Paperclip, Loader } from 'lucide-react';
+import { CheckCircle2, XCircle, Send, Paperclip, Loader, Folder } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -108,7 +108,6 @@ function Latex({ formula }: { formula: string }) {
 function FormContent() {
   const [state, formAction] = useActionState(submitQuestion, initialState);
   const [nextStepState, nextStepAction] = useActionState(getNextStep, state);
-  const { pending } = useFormStatus();
 
   const activeState = state.status !== 'initial' ? state : nextStepState;
 
@@ -223,7 +222,7 @@ function FormContent() {
             id: `${activeState.id}-step-${currentStep.stepNumber}`,
             type: 'ai_step',
             content: (
-                <div className="border border-primary/30 rounded-md p-4 bg-black/20">
+                <div className="border border-primary/30 rounded-md p-4 bg-black/20 relative pb-12">
                     <Typewriter
                         text={`Adım ${currentStep.stepNumber}: ${currentStep.explanation}`}
                         speed={10}
@@ -236,12 +235,19 @@ function FormContent() {
             stepNumber: currentStep.stepNumber
         };
         
-        setMessages(prev => [
-            ...initialMessages,
-            // Only keep previous steps, remove briefings or old steps
-            ...prev.filter(m => m.type === 'ai_step' && m.stepNumber! < currentStep.stepNumber!),
-            newStepMessage
-        ]);
+        setMessages(prev => {
+            const newMessages = prev.filter(m => m.type !== 'briefing');
+            const existingStepIndex = newMessages.findIndex(m => m.id === newStepMessage.id);
+            if (existingStepIndex > -1) {
+                newMessages[existingStepIndex] = newStepMessage;
+            } else {
+                newMessages.push(newStepMessage);
+            }
+            if (initialMessages.length > 0 && !newMessages.some(m => m.type === 'user')) {
+                return [...initialMessages, ...newMessages];
+            }
+            return newMessages;
+        });
         
         if (currentStepIndex === 0) {
             formRef.current?.reset();
@@ -276,18 +282,18 @@ function FormContent() {
 
   useEffect(() => {
     viewportRef.current?.scrollTo({ top: viewportRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, pending]);
+  }, [messages, activeState.status]);
 
   const showNextStepButton = activeState.status === 'step_by_step' && activeState.currentStepIndex! < activeState.totalSteps! - 1;
-  const isProcessing = pending || messages.some(m => m.type === 'briefing');
-
+  const isProcessing = activeState.status === 'analyzing' || activeState.status === 'verifying' || (messages.some(m => m.type === 'briefing'));
+  
   return (
     <>
       <ScrollArea className="flex-1 pr-4 -mr-4" viewportRef={viewportRef}>
         <div className="flex flex-col gap-4">
           {messages.map((msg) => (
             <div key={msg.id} className={cn(
-              'font-code text-sm',
+              'font-code text-sm relative',
               msg.type === 'user' && 'text-primary',
               msg.type === 'ai_step' && 'text-foreground',
               msg.type === 'verification' && 'text-muted-foreground',
@@ -295,16 +301,17 @@ function FormContent() {
               msg.type === 'briefing' && 'text-primary'
             )}>
               {msg.content}
+              {msg.type === 'ai_step' && showNextStepButton && (
+                 <Button onClick={handleNextStep} disabled={isProcessing} size="icon" className="absolute bottom-2 right-2 bg-yellow-500 hover:bg-yellow-600 text-black rounded-full h-10 w-10">
+                    <Folder className="h-5 w-5" />
+                 </Button>
+              )}
             </div>
           ))}
         </div>
       </ScrollArea>
       <div className="mt-4">
-        {showNextStepButton && (
-          <Button onClick={handleNextStep} disabled={isProcessing} className="w-full mb-4">
-            {isProcessing ? 'Yükleniyor...' : 'Sonraki Adım'}
-          </Button>
-        )}
+        
         <form ref={formRef} action={handleSubmit} className="relative">
           <input type="hidden" name="fileData" value={fileData || ''} />
           <div className="relative flex w-full items-center">

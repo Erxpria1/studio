@@ -1,9 +1,11 @@
 'use server';
 
-import { generateStepByStepSolution, type GenerateStepByStepSolutionOutput, type SolutionStep } from '@/ai/flows/generate-step-by-step-solution';
+import { generateStepByStepSolution } from '@/ai/flows/generate-step-by-step-solution';
 import { verifyAiGeneratedSolution } from '@/ai/flows/verify-ai-generated-solution';
 import { z } from 'zod';
 import { unstable_cache as cache, revalidateTag } from 'next/cache';
+import { SolutionStepSchema, type SolutionStep } from '@/lib/schemas';
+
 
 const MathQuestionSchema = z.object({
   question: z.string().min(3, "Soru en az 3 karakter uzunluğunda olmalıdır."),

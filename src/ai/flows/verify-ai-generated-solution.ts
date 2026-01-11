@@ -42,7 +42,7 @@ Görevin, çözümü doğrulamak ve doğru olup olmadığını belirlemek.
 Soru: {{{question}}}
 Çözüm: {{{aiSolution}}}
 
-Doğrulama sürecinin ayrıntılı bir dökümünü sun ve çözümün doğru olup olmadığını belirt.
+Doğrulama sürecinin ayrıntılı bir dökümünü sun ve çözümün doğru olup olmadığını belirt. Cevabın SADECE Türkçe olmalı.
 Cevabı, çıktı şemasına göre JSON formatında döndür.`,
 });
 
