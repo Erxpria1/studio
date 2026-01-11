@@ -1,11 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MathTerminal } from '@/components/math-terminal';
 import { IntroAnimation } from '@/components/intro-animation';
 
 export default function Home() {
   const [introComplete, setIntroComplete] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  if (!isClient) {
+    return null; // or a loading spinner
+  }
 
   if (!introComplete) {
     return <IntroAnimation onComplete={() => setIntroComplete(true)} />;
