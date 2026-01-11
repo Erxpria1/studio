@@ -13,7 +13,8 @@ import { checkTurkish } from './turkish-checker';
 
 const GenerateStepByStepSolutionInputSchema = z.object({
   question: z.string().describe('The mathematical question to be solved.'),
-  fileData: z.string().optional().describe("A file (image or PDF content) as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'.")
+  fileData: z.string().optional().describe("A file (image or PDF content) as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."),
+  step: z.number().optional().describe("The specific step to generate. If not provided, all steps are generated.")
 });
 export type GenerateStepByStepSolutionInput = z.infer<typeof GenerateStepByStepSolutionInputSchema>;
 
@@ -22,6 +23,8 @@ const SolutionStepSchema = z.object({
   explanation: z.string().describe('The verbal explanation for this step.'),
   formula: z.string().describe('The mathematical formula or calculation for this step, formatted as a LaTeX string.'),
 });
+export type SolutionStep = z.infer<typeof SolutionStepSchema>;
+
 
 const GenerateStepByStepSolutionOutputSchema = z.object({
   solution: z.array(SolutionStepSchema).describe('An array of steps representing the step-by-step solution to the mathematical question.'),
@@ -37,6 +40,9 @@ const prompt = ai.definePrompt({
   input: {schema: GenerateStepByStepSolutionInputSchema},
   output: {schema: GenerateStepByStepSolutionOutputSchema},
   prompt: `Sen adım adım çözüm açıklama konusunda uzman bir matematik çözücüsün. Aşağıdaki matematik sorusuna ayrıntılı, 3 adımlı bir çözüm sun. Her adım için, bir açıklama ve bir LaTeX formatında formül sağla.
+{{#if step}}
+Sadece ${'{{{step}}}'}. adımı oluştur.
+{{/if}}
 
 Soru: {{{question}}}{{#if fileData}}
 

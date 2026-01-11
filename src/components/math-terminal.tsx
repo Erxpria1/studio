@@ -1,39 +1,39 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useEffect, useRef, useState, useOptimistic } from 'react';
 import { useFormStatus } from 'react-dom';
-import { getSolution, type SolutionState } from '@/app/actions';
+import { submitQuestion, getNextStep, type FormState } from '@/app/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Typewriter } from '@/components/typewriter';
-import { CheckCircle2, XCircle, AlertTriangle, Send, Paperclip } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertTriangle, Send, Paperclip, Loader } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 type Message = {
-  id: number;
-  type: 'user' | 'ai' | 'verification';
-  content: string | React.ReactNode;
+  id: string;
+  type: 'user' | 'ai_step' | 'verification' | 'error' | 'briefing';
+  content: React.ReactNode;
+  stepNumber?: number;
 };
 
-const initialState: SolutionState = {
-  id: 0,
-  status: 'success',
-  question: '',
+const initialState: FormState = {
+  id: '0',
+  status: 'initial',
 };
 
 const briefings = [
-  'AI çekirdekleri etkinleştiriliyor...',
+  'Soru analiz ediliyor...',
   'Matematiksel matris taranıyor...',
-  'Sinir ağları sorgulanıyor...',
+  'Matlab çekirdekleri sorgulanıyor...',
+  'N-SLAB algoritmaları çalıştırılıyor...',
+  'Matscyber protokolleri başlatılıyor...',
   'Olasılıklar hesaplanıyor...',
   'Çözüm yolları analiz ediliyor...',
-  'Doğrulama protokolleri başlatılıyor...',
   'Kuantum tünelleme yoluyla veri alınıyor...',
-  'Siber uzayda çözüm aranıyor...',
   'Mantık kapıları hizalanıyor...',
   'Sonuçlar derleniyor...',
 ];
@@ -50,11 +50,12 @@ function BriefingDisplay() {
     }, []);
 
     return (
-        <div className="font-code text-sm text-primary blinking-cursor">
-            {briefings[currentBriefingIndex]}
+        <div className="font-code text-sm text-primary blinking-cursor flex items-center gap-2">
+           <Loader className="animate-spin h-4 w-4" /> {briefings[currentBriefingIndex]}
         </div>
     );
 }
+
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -70,45 +71,6 @@ function SubmitButton() {
       )}
     </Button>
   );
-}
-
-function AiSolution({ 
-    solutionSteps, 
-    onSolutionComplete 
-}: { 
-    solutionSteps: SolutionState['solution'],
-    onSolutionComplete: () => void;
-}) {
-    const [completedSteps, setCompletedSteps] = useState<number[]>([]);
-
-    useEffect(() => {
-        if (solutionSteps && completedSteps.length === solutionSteps.length) {
-            onSolutionComplete();
-        }
-    }, [completedSteps, solutionSteps, onSolutionComplete]);
-
-    if (!solutionSteps) return null;
-
-    return (
-        <div className="flex flex-col gap-4">
-            {solutionSteps.map((step) => (
-                <div key={step.stepNumber} className="border border-primary/30 rounded-md p-4 bg-black/20">
-                    <Typewriter
-                        text={`Adım ${step.stepNumber}: ${step.explanation}`}
-                        speed={10}
-                        onComplete={() => {
-                            setCompletedSteps(prev => [...prev, step.stepNumber]);
-                        }}
-                    />
-                    {completedSteps.includes(step.stepNumber) && (
-                         <div className="font-code text-accent mt-2 p-2 bg-black/20 rounded-md">
-                            <Latex formula={step.formula} />
-                        </div>
-                    )}
-                </div>
-            ))}
-        </div>
-    );
 }
 
 function Latex({ formula }: { formula: string }) {
@@ -144,17 +106,19 @@ function Latex({ formula }: { formula: string }) {
 
 
 function FormContent() {
-  const [state, formAction] = useActionState(getSolution, initialState);
+  const [state, formAction] = useActionState(submitQuestion, initialState);
+  const [nextStepState, nextStepAction] = useActionState(getNextStep, state);
+  const { pending } = useFormStatus();
+
+  const activeState = state.status !== 'initial' ? state : nextStepState;
+
   const [messages, setMessages] = useState<Message[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const { pending } = useFormStatus();
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const [fileData, setFileData] = useState<string | null>(null);
-
-  const [isAiTyping, setIsAiTyping] = useState(false);
-  const [typingComplete, setTypingComplete] = useState(false);
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -177,7 +141,7 @@ function FormContent() {
             reader.readAsDataURL(file);
         } else if (file.type === 'application/pdf') {
             try {
-                const pdfjs = await import('pdfjs-dist');
+                const {default: pdfjs} = await import('pdfjs-dist');
                 const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs');
                 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -191,7 +155,7 @@ function FormContent() {
                             for (let i = 1; i <= pdf.numPages; i++) {
                                 const page = await pdf.getPage(i);
                                 const textContent = await page.getTextContent();
-                                fullText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
+                                fullText += (textContent.items as any[]).map((item: any) => item.str).join(' ') + '\n';
                             }
                             
                             const textAsDataUri = `data:text/plain;base64,${btoa(unescape(encodeURIComponent(fullText)))}`;
@@ -237,78 +201,85 @@ function FormContent() {
   };
   
   useEffect(() => {
-    if (state.id === 0) return;
+    if (activeState.id === '0') return;
 
-    // Use a more robust way to prevent duplicate message processing
-    const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : 0;
-    if (lastMessageId >= state.id + 1) return;
-
-    const userMsg: Message = { id: state.id, type: 'user', content: `> ${state.question}` };
-     // Check if user message already exists
-    const userMsgExists = messages.some(msg => msg.id === userMsg.id);
-    const initialMessages = userMsgExists ? [] : [userMsg];
-
-
-    if (state.status === 'success' && state.question && state.solution) {
-      setIsAiTyping(true);
-      setTypingComplete(false);
-      
-      const aiMsg: Message = {
-        id: state.id + 1,
-        type: 'ai',
-        content: <AiSolution solutionSteps={state.solution} onSolutionComplete={() => {
-            setIsAiTyping(false);
-            setTypingComplete(true);
-        }} />,
-      };
-      
-      setMessages(prev => [...prev, ...initialMessages, aiMsg]);
+    if (activeState.status === 'error') {
+      setMessages(prev => [
+          ...prev.filter(m => m.type !== 'briefing'),
+          { id: activeState.id + '-error', type: 'error', content: `Hata: ${activeState.error}` }
+      ]);
       formRef.current?.reset();
       setFileData(null);
-
-    } else if (state.status === 'error' && state.error) {
-       const errorMsg: Message = {
-        id: state.id + 1,
-        type: 'verification',
-        content: (
-          <div className="flex items-center gap-2 text-destructive">
-            <AlertTriangle />
-            <span>Hata: {state.error}</span>
-          </div>
-        )
-      };
-      setMessages(prev => [...prev, ...initialMessages, errorMsg]);
-      formRef.current?.reset();
-      setFileData(null);
-      setIsAiTyping(false);
-    }
-  }, [state]);
-
-  useEffect(() => {
-    if (typingComplete && state.status === 'success' && state.isCorrect !== undefined) {
-        const lastMessage = messages[messages.length - 1];
-        // Ensure verification message is not already present
-        if (lastMessage?.type !== 'verification' && lastMessage.id < state.id + 2) {
-             const verificationMsgContent = (
-                <div className="flex items-center gap-2">
-                    {state.isCorrect ? <CheckCircle2 className="text-green-500" /> : <XCircle className="text-red-500" />}
-                    <Typewriter text={state.verificationDetails || ''} speed={10} />
-                </div>
-            );
-            const verificationMsg: Message = {
-                id: state.id + 2,
-                type: 'verification',
-                content: verificationMsgContent,
-            };
-            setMessages(prev => [...prev, verificationMsg]);
+    } else if (activeState.status === 'step_by_step' && activeState.currentStep) {
+        const { currentStep, currentStepIndex } = activeState;
+        
+        const userMsgExists = messages.some(msg => msg.type === 'user');
+        const initialMessages: Message[] = [];
+        if (!userMsgExists && activeState.question) {
+            initialMessages.push({ id: activeState.id + '-user', type: 'user', content: `> ${activeState.question}` });
         }
-        setTypingComplete(false); // Reset for next submission
+
+        const newStepMessage: Message = {
+            id: `${activeState.id}-step-${currentStep.stepNumber}`,
+            type: 'ai_step',
+            content: (
+                <div className="border border-primary/30 rounded-md p-4 bg-black/20">
+                    <Typewriter
+                        text={`Adım ${currentStep.stepNumber}: ${currentStep.explanation}`}
+                        speed={10}
+                    />
+                    <div className="font-code text-accent mt-2 p-2 bg-black/20 rounded-md">
+                        <Latex formula={currentStep.formula} />
+                    </div>
+                </div>
+            ),
+            stepNumber: currentStep.stepNumber
+        };
+        
+        setMessages(prev => [
+            ...initialMessages,
+            // Only keep previous steps, remove briefings or old steps
+            ...prev.filter(m => m.type === 'ai_step' && m.stepNumber! < currentStep.stepNumber!),
+            newStepMessage
+        ]);
+        
+        if (currentStepIndex === 0) {
+            formRef.current?.reset();
+            setFileData(null);
+        }
+    } else if (activeState.status === 'complete') {
+        const verificationMsg: Message = {
+            id: activeState.id + '-verification',
+            type: 'verification',
+            content: (
+                <div className="flex items-center gap-2">
+                    {activeState.isCorrect ? <CheckCircle2 className="text-green-500" /> : <XCircle className="text-red-500" />}
+                    <Typewriter text={activeState.verificationDetails || ''} speed={10} />
+                </div>
+            )
+        };
+        setMessages(prev => [...prev.filter(m => m.type !== 'briefing'), verificationMsg]);
     }
-  }, [typingComplete, state, messages]);
+  }, [activeState]);
+
+  const handleSubmit = (formData: FormData) => {
+    const question = formData.get('question');
+    if (!question) return;
+    setMessages([{ id: Date.now().toString(), type: 'user', content: `> ${question}` }, { id: 'briefing', type: 'briefing', content: <BriefingDisplay />}]);
+    formAction(formData);
+  };
+  
+  const handleNextStep = () => {
+    nextStepAction(new FormData());
+    setMessages(prev => [...prev, { id: 'briefing', type: 'briefing', content: <BriefingDisplay />}])
+  };
 
   useEffect(() => {
     viewportRef.current?.scrollTo({ top: viewportRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, isAiTyping, pending]);
+  }, [messages, pending]);
+
+  const showNextStepButton = activeState.status === 'step_by_step' && activeState.currentStepIndex! < activeState.totalSteps! - 1;
+  const isProcessing = pending || messages.some(m => m.type === 'briefing');
 
   return (
     <>
@@ -318,45 +289,53 @@ function FormContent() {
             <div key={msg.id} className={cn(
               'font-code text-sm',
               msg.type === 'user' && 'text-primary',
-              msg.type === 'ai' && 'text-foreground',
-              msg.type === 'verification' && 'text-muted-foreground'
+              msg.type === 'ai_step' && 'text-foreground',
+              msg.type === 'verification' && 'text-muted-foreground',
+              msg.type === 'error' && 'text-destructive',
+              msg.type === 'briefing' && 'text-primary'
             )}>
               {msg.content}
             </div>
           ))}
-           {pending && <BriefingDisplay />}
         </div>
       </ScrollArea>
-      <form ref={formRef} action={formAction} className="relative mt-4">
-        <input type="hidden" name="fileData" value={fileData || ''} />
-        <div className="relative flex w-full items-center">
-          <Input
-            name="question"
-            placeholder="> Bir matematik sorusu sorun... örn., 'x için çöz: 2x + 5 = 15'"
-            className="bg-background/50 border-primary/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-24 font-code"
-            autoComplete="off"
-            disabled={pending}
-          />
-          <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1">
-             <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              className="hidden"
-              accept="image/*,application/pdf"
-            />
-            <Button type="button" size="icon" variant="ghost" onClick={handleUploadClick} disabled={pending} className="h-8 w-8 text-accent hover:text-accent/80">
-              <Paperclip className="h-4 w-4" />
-            </Button>
-            <SubmitButton />
-          </div>
-        </div>
-         {fileData && (
-          <div className="mt-2 text-xs text-muted-foreground">
-            Bir dosya eklendi. Kaldırmak için alanı temizleyin veya yeni bir dosya seçin.
-          </div>
+      <div className="mt-4">
+        {showNextStepButton && (
+          <Button onClick={handleNextStep} disabled={isProcessing} className="w-full mb-4">
+            {isProcessing ? 'Yükleniyor...' : 'Sonraki Adım'}
+          </Button>
         )}
-      </form>
+        <form ref={formRef} action={handleSubmit} className="relative">
+          <input type="hidden" name="fileData" value={fileData || ''} />
+          <div className="relative flex w-full items-center">
+            <Input
+              name="question"
+              placeholder="> Bir matematik sorusu sorun... örn., 'x için çöz: 2x + 5 = 15'"
+              className="bg-background/50 border-primary/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-24 font-code"
+              autoComplete="off"
+              disabled={isProcessing}
+            />
+            <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                accept="image/*,application/pdf"
+              />
+              <Button type="button" size="icon" variant="ghost" onClick={handleUploadClick} disabled={isProcessing} className="h-8 w-8 text-accent hover:text-accent/80">
+                <Paperclip className="h-4 w-4" />
+              </Button>
+              <SubmitButton />
+            </div>
+          </div>
+          {fileData && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              Bir dosya eklendi. Kaldırmak için alanı temizleyin veya yeni bir dosya seçin.
+            </div>
+          )}
+        </form>
+      </div>
     </>
   )
 }

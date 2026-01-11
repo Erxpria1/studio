@@ -1,29 +1,47 @@
 'use server';
 
-import { generateStepByStepSolution, type GenerateStepByStepSolutionOutput } from '@/ai/flows/generate-step-by-step-solution';
+import { generateStepByStepSolution, type GenerateStepByStepSolutionOutput, type SolutionStep } from '@/ai/flows/generate-step-by-step-solution';
 import { verifyAiGeneratedSolution } from '@/ai/flows/verify-ai-generated-solution';
 import { z } from 'zod';
+import { unstable_cache as cache, revalidateTag } from 'next/cache';
 
 const MathQuestionSchema = z.object({
   question: z.string().min(3, "Soru en az 3 karakter uzunluğunda olmalıdır."),
   fileData: z.string().optional(),
 });
 
-export type SolutionState = {
-  id: number;
-  status: 'success' | 'error';
+type SolutionCache = {
   question: string;
-  solution?: GenerateStepByStepSolutionOutput['solution'];
+  fileData?: string;
+  fullSolution: SolutionStep[];
   isCorrect?: boolean;
   verificationDetails?: string;
-  error?: string;
 };
 
-export async function getSolution(
-  prevState: SolutionState,
+// unstable_cache'i kullanarak state'i sunucu tarafında yönetiyoruz.
+const getSolutionCache = (id: string) => cache(
+  async () => null, // Başlangıçta boş
+  [id],
+  { tags: [id] }
+);
+
+export type FormState = {
+  id: string;
+  status: 'initial' | 'analyzing' | 'step_by_step' | 'verifying' | 'complete' | 'error';
+  question?: string;
+  error?: string;
+  currentStep?: SolutionStep;
+  currentStepIndex?: number;
+  totalSteps?: number;
+  isCorrect?: boolean;
+  verificationDetails?: string;
+};
+
+export async function submitQuestion(
+  prevState: FormState,
   formData: FormData
-): Promise<SolutionState> {
-  console.log("getSolution eylemi başlatıldı.");
+): Promise<FormState> {
+  const submissionId = Date.now().toString();
   const validatedFields = MathQuestionSchema.safeParse({
     question: formData.get('question'),
     fileData: formData.get('fileData'),
@@ -33,49 +51,114 @@ export async function getSolution(
 
   if (!validatedFields.success) {
     const errorMessage = validatedFields.error.flatten().fieldErrors.question?.join(', ');
-    console.error("Doğrulama hatası:", errorMessage);
     return {
-      id: Date.now(),
+      id: submissionId,
       status: 'error',
-      question: question,
+      question,
       error: errorMessage,
     };
   }
-  
+
   const { question: validQuestion, fileData } = validatedFields.data;
-  console.log("Doğrulanan soru:", validQuestion);
 
   try {
-    console.log("Adım adım çözüm oluşturma başlatılıyor...");
-    const solutionResult = await generateStepByStepSolution({ question: validQuestion, fileData });
-    console.log("Çözüm sonucu alındı:", solutionResult);
+    // Generate the full solution but only return the first step
+    const fullSolutionResult = await generateStepByStepSolution({ question: validQuestion, fileData });
 
-    if (!solutionResult.solution) {
+    if (!fullSolutionResult.solution || fullSolutionResult.solution.length === 0) {
       throw new Error("Yapay zeka bir çözüm üretemedi.");
     }
     
-    // For verification, we can join the steps into a single string
-    const aiSolutionText = solutionResult.solution.map(step => `${step.explanation} ${step.formula}`).join('\n');
-    
-    console.log("Çözüm doğrulaması başlatılıyor...");
-    const verificationResult = await verifyAiGeneratedSolution({ question: validQuestion, aiSolution: aiSolutionText });
-    console.log("Doğrulama sonucu alındı:", verificationResult);
-
-    return {
-      id: Date.now(),
-      status: 'success',
-      question: validQuestion,
-      solution: solutionResult.solution,
-      isCorrect: verificationResult.isCorrect,
-      verificationDetails: verificationResult.verificationDetails,
+    // Cache the full solution
+    const solutionCache: SolutionCache = {
+        question: validQuestion,
+        fileData,
+        fullSolution: fullSolutionResult.solution,
     };
-  } catch (error: any) {
-    console.error("getSolution eyleminde bir hata oluştu:", error);
+    
+    // Revalidate (clear) the cache for this ID and set the new value
+    revalidateTag(submissionId);
+    const setCache = await getSolutionCache(submissionId);
+    await setCache(solutionCache as any, {tags: [submissionId]});
+
+
+    // Return only the first step
     return {
-      id: Date.now(),
+      id: submissionId,
+      status: 'step_by_step',
+      question: validQuestion,
+      currentStep: fullSolutionResult.solution[0],
+      currentStepIndex: 0,
+      totalSteps: fullSolutionResult.solution.length,
+    };
+
+  } catch (error: any) {
+    console.error("submitQuestion eyleminde bir hata oluştu:", error);
+    return {
+      id: submissionId,
       status: 'error',
       question: validQuestion,
       error: error.message || 'Çözüm oluşturulurken bilinmeyen bir hata oluştu. Lütfen tekrar deneyin.',
     };
   }
+}
+
+export async function getNextStep(prevState: FormState): Promise<FormState> {
+    if (!prevState.id || prevState.status !== 'step_by_step' || prevState.currentStepIndex === undefined || prevState.totalSteps === undefined) {
+        return { ...prevState, status: 'error', error: 'Geçersiz durum. Lütfen baştan başlayın.' };
+    }
+
+    const nextStepIndex = prevState.currentStepIndex + 1;
+    
+    const getCachedSolution = await getSolutionCache(prevState.id);
+    const cachedData = await getCachedSolution() as SolutionCache | null;
+
+    if (!cachedData) {
+        return { ...prevState, status: 'error', error: 'Çözüm bulunamadı veya süresi doldu. Lütfen tekrar sorun.' };
+    }
+
+    const { fullSolution, question } = cachedData;
+    
+    if (nextStepIndex < prevState.totalSteps) {
+        // Return the next step
+        return {
+            ...prevState,
+            status: 'step_by_step',
+            currentStep: fullSolution[nextStepIndex],
+            currentStepIndex: nextStepIndex,
+        };
+    } else {
+        // All steps are done, now run verification
+         try {
+            const aiSolutionText = fullSolution.map(step => `${step.explanation} ${step.formula}`).join('\n');
+            
+            const verificationResult = await verifyAiGeneratedSolution({ question, aiSolution: aiSolutionText });
+
+            // Update cache with verification
+            const updatedCache: SolutionCache = {
+                ...cachedData,
+                isCorrect: verificationResult.isCorrect,
+                verificationDetails: verificationResult.verificationDetails,
+            };
+            revalidateTag(prevState.id);
+            const setCache = await getSolutionCache(prevState.id);
+            await setCache(updatedCache as any, {tags: [prevState.id]});
+
+
+            return {
+                ...prevState,
+                status: 'complete',
+                isCorrect: verificationResult.isCorrect,
+                verificationDetails: verificationResult.verificationDetails,
+            };
+        } catch (error: any) {
+            console.error("getNextStep (verification) eyleminde bir hata oluştu:", error);
+            return {
+                id: prevState.id,
+                status: 'error',
+                question: question,
+                error: error.message || 'Doğrulama sırasında bilinmeyen bir hata oluştu.',
+            };
+        }
+    }
 }
