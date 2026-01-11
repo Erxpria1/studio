@@ -12,6 +12,7 @@ import { CheckCircle2, XCircle, Send, Paperclip, Loader, ArrowRightCircle } from
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { SolutionStep } from '@/lib/schemas';
 
 type Message = {
   id: string;
@@ -103,16 +104,7 @@ function Latex({ formula }: { formula: string }) {
 
 
 function FormContent() {
-  const [submitState, submitAction, isSubmitting] = useActionState(submitQuestion, initialFormState);
-  const [nextStepState, nextStepAction, isGettingNextStep] = useActionState(getNextStep, initialFormState);
-
-  const activeState = useMemo(() => {
-    // If nextStepState has been updated (is no longer initial), it's the active one.
-    if (nextStepState.status !== 'initial') return nextStepState;
-    // Otherwise, the submitState is the active one.
-    return submitState;
-  }, [submitState, nextStepState]);
-
+  const [state, formAction, isPending] = useActionState(submitQuestion, initialFormState);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
@@ -130,61 +122,54 @@ function FormContent() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const processFile = async (file: File) => {
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+        const result = e.target?.result;
+        if (typeof result !== 'string') {
+            console.error("Dosya okunamadı.");
+            return;
+        }
+
         if (file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                setFileData(e.target?.result as string);
-                toast({
-                    title: "Dosya hazır",
-                    description: `"${file.name}" analiz edilmeye hazır. Bir soru ekleyin ve gönder'e basın.`,
-                });
-            };
-            reader.readAsDataURL(file);
+            setFileData(result);
+            toast({
+                title: "Dosya hazır",
+                description: `"${file.name}" analiz edilmeye hazır. Bir soru ekleyin ve gönder'e basın.`,
+            });
         } else if (file.type === 'application/pdf') {
             try {
                 const {default: pdfjs} = await import('pdfjs-dist');
                 const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs');
                 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-                const reader = new FileReader();
-                reader.onload = async (e) => {
-                    const arrayBuffer = e.target?.result as ArrayBuffer;
-                    if (arrayBuffer) {
-                        try {
-                            const pdf: PDFDocumentProxy = await pdfjs.getDocument(new Uint8Array(arrayBuffer)).promise;
-                            let fullText = '';
-                            for (let i = 1; i <= pdf.numPages; i++) {
-                                const page = await pdf.getPage(i);
-                                const textContent = await page.getTextContent();
-                                fullText += (textContent.items as any[]).map((item: any) => item.str).join(' ') + '\n';
-                            }
-                            
-                            // Handle UTF-8 characters correctly for btoa
-                            const textAsDataUri = `data:text/plain;base64,${btoa(unescape(encodeURIComponent(fullText)))}`;
+                const pdf: PDFDocumentProxy = await pdfjs.getDocument(result).promise;
+                let fullText = '';
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    fullText += (textContent.items as any[]).map((item: any) => item.str).join(' ') + '\n';
+                }
+                
+                const textEncoder = new TextEncoder();
+                const utf8Bytes = textEncoder.encode(fullText);
+                let binary = '';
+                utf8Bytes.forEach(byte => {
+                    binary += String.fromCharCode(byte);
+                });
+                const textAsDataUri = `data:text/plain;base64,${btoa(binary)}`;
 
-                            setFileData(textAsDataUri);
-                            toast({
-                                title: "PDF dosyası okundu",
-                                description: `"${file.name}" içeriği analiz edilmeye hazır.`,
-                            });
-                        } catch (error) {
-                            console.error("PDF okunurken hata oluştu:", error);
-                            toast({
-                                variant: 'destructive',
-                                title: 'PDF Okuma Hatası',
-                                description: 'PDF dosyası işlenirken bir sorun oluştu.',
-                            });
-                        }
-                    }
-                };
-                reader.readAsArrayBuffer(file);
+                setFileData(textAsDataUri);
+                toast({
+                    title: "PDF dosyası okundu",
+                    description: `"${file.name}" içeriği analiz edilmeye hazır.`,
+                });
             } catch (error) {
-                console.error("pdfjs-dist yüklenirken hata oluştu:", error);
+                console.error("PDF okunurken hata oluştu:", error);
                 toast({
                     variant: 'destructive',
-                    title: 'PDF Yükleyici Hatası',
-                    description: 'PDF işleyici yüklenemedi. Lütfen tekrar deneyin.',
+                    title: 'PDF Okuma Hatası',
+                    description: 'PDF dosyası işlenirken bir sorun oluştu.',
                 });
             }
         } else {
@@ -196,32 +181,32 @@ function FormContent() {
         }
     };
     
-    await processFile(file);
+    reader.readAsDataURL(file);
 
     if(event.target) {
       event.target.value = '';
     }
   };
 
-  const isProcessing = isSubmitting || isGettingNextStep;
+  const isProcessing = isPending;
 
   
   useEffect(() => {
-    if (activeState.id === '0') return;
+    if (state.id === '0') return;
 
     const lastMessage = messages[messages.length - 1];
     const isBriefingActive = lastMessage?.type === 'briefing';
 
-    if (activeState.status === 'error') {
+    if (state.status === 'error') {
       const newMessages = isBriefingActive ? messages.slice(0, -1) : messages;
       setMessages([
           ...newMessages,
-          { id: activeState.id + '-error', type: 'error', content: `Hata: ${activeState.error}` }
+          { id: state.id + '-error', type: 'error', content: `Hata: ${state.error}` }
       ]);
       formRef.current?.reset();
       setFileData(null);
-    } else if (activeState.status === 'step_by_step' && activeState.currentStep) {
-        const { currentStep, currentStepIndex, totalSteps } = activeState;
+    } else if (state.status === 'step_by_step' && state.currentStep) {
+        const { currentStep, currentStepIndex, totalSteps, fullSolution } = state;
         
         let newMessages = [...messages];
         if (isBriefingActive) {
@@ -229,14 +214,14 @@ function FormContent() {
         }
 
         const userMsgExists = newMessages.some(msg => msg.type === 'user');
-        if (!userMsgExists && activeState.question) {
-            newMessages.unshift({ id: activeState.id + '-user', type: 'user', content: `> ${activeState.question}` });
+        if (!userMsgExists && state.question) {
+            newMessages.unshift({ id: state.id + '-user', type: 'user', content: `> ${state.question}` });
         }
         
         const showNextBtn = currentStepIndex !== undefined && totalSteps !== undefined && currentStepIndex < totalSteps - 1;
 
         const newStepMessage: Message = {
-            id: `${activeState.id}-step-${currentStep.stepNumber}`,
+            id: `${state.id}-step-${currentStep.stepNumber}`,
             type: 'ai_step',
             content: (
                 <div className="border border-primary/30 rounded-md p-4 bg-black/20 relative pb-12">
@@ -248,10 +233,12 @@ function FormContent() {
                         <Latex formula={currentStep.formula} />
                     </div>
                     {showNextBtn && (
-                       <form action={() => {
-                            nextStepAction(activeState);
-                            setMessages(prev => [...prev, { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}])
-                       }}>
+                       <form action={formAction}>
+                            <input type="hidden" name="next_step" value="true" />
+                            <input type="hidden" name="question" value={state.question} />
+                            <input type="hidden" name="current_step_index" value={currentStepIndex} />
+                            <input type="hidden" name="total_steps" value={totalSteps} />
+                            <input type="hidden" name="full_solution_json" value={JSON.stringify(fullSolution)} />
                             <Button type="submit" disabled={isProcessing} size="icon" variant="ghost" className="absolute bottom-2 right-2 text-yellow-500 hover:text-yellow-400 h-8 w-8">
                                <ArrowRightCircle className="h-6 w-6" />
                             </Button>
@@ -271,43 +258,46 @@ function FormContent() {
 
         setMessages(newMessages);
         
-        if (activeState.currentStepIndex === 0) {
+        if (state.currentStepIndex === 0) {
             formRef.current?.reset();
             setFileData(null);
         }
-    } else if (activeState.status === 'complete') {
+    } else if (state.status === 'complete') {
         const newMessages = isBriefingActive ? messages.slice(0, -1) : messages;
         const verificationMsg: Message = {
-            id: activeState.id + '-verification',
+            id: state.id + '-verification',
             type: 'verification',
             content: (
                 <div className="flex items-start gap-2 p-4 border border-primary/20 rounded-md bg-black/20">
-                    {activeState.isCorrect ? <CheckCircle2 className="text-green-500 mt-1 h-5 w-5 flex-shrink-0" /> : <XCircle className="text-red-500 mt-1 h-5 w-5 flex-shrink-0" />}
-                    <Typewriter text={activeState.verificationDetails || ''} speed={10} />
+                    {state.isCorrect ? <CheckCircle2 className="text-green-500 mt-1 h-5 w-5 flex-shrink-0" /> : <XCircle className="text-red-500 mt-1 h-5 w-5 flex-shrink-0" />}
+                    <Typewriter text={state.verificationDetails || ''} speed={10} />
                 </div>
             )
         };
         setMessages([...newMessages, verificationMsg]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeState]);
+  }, [state]);
 
   const handleSubmit = (formData: FormData) => {
     const question = formData.get('question');
-    if (!question || isSubmitting) return;
+    if (!question || isProcessing) return;
 
+    // Clear previous messages except the new user question
     setMessages([
         { id: Date.now().toString() + '-user', type: 'user', content: `> ${question}` },
         { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}
     ]);
-    submitAction(formData);
+    
+    // This will be handled by the form's action prop now
+    // formAction(formData);
   };
   
   useEffect(() => {
     viewportRef.current?.scrollTo({ top: viewportRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, activeState.status]);
+  }, [messages, state.status]);
 
-  const isTerminalOccupied = activeState.status !== 'initial' && activeState.status !== 'complete' && activeState.status !== 'error';
+  const isTerminalOccupied = state.status !== 'initial' && state.status !== 'complete' && state.status !== 'error';
 
   return (
     <>
@@ -328,7 +318,20 @@ function FormContent() {
         </div>
       </ScrollArea>
       <div className="mt-4">
-        <form ref={formRef} action={handleSubmit} className="relative">
+        <form 
+            ref={formRef} 
+            action={(formData) => {
+                const question = formData.get('question') as string;
+                if (question && !isProcessing) {
+                     setMessages([
+                        { id: Date.now().toString() + '-user', type: 'user', content: `> ${question}` },
+                        { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}
+                    ]);
+                    formAction(formData);
+                }
+            }} 
+            className="relative"
+        >
           <input type="hidden" name="fileData" value={fileData || ''} />
           <div className="relative flex w-full items-center">
             <Input
@@ -379,3 +382,5 @@ export function MathTerminal() {
     </Card>
   );
 }
+
+    
