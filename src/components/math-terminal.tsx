@@ -72,7 +72,7 @@ function SubmitButton() {
   );
 }
 
-export function MathTerminal() {
+function FormContent() {
   const [state, formAction] = useActionState(getSolution, initialState);
   const [messages, setMessages] = useState<Message[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
@@ -83,7 +83,6 @@ export function MathTerminal() {
   const { toast } = useToast();
   const [fileData, setFileData] = useState<string | null>(null);
   const { pending } = useFormStatus();
-
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -156,22 +155,21 @@ export function MathTerminal() {
         });
     }
 
-    // Reset file input to allow re-selection of the same file
     if(event.target) {
       event.target.value = '';
     }
   };
 
   useEffect(() => {
-    if (state.id === 0) return; // Initial state, do nothing
+    if (state.id === 0) return;
 
     const lastMessage = messages[messages.length - 1];
-    // This is a hacky way to prevent duplicate messages. A better solution would be to use unique IDs.
     if (lastMessage && lastMessage.id > state.id) return;
+
+    const userMsg: Message = { id: state.id, type: 'user', content: `> ${state.question}` };
 
     if (state.status === 'success' && state.question && state.solution) {
       setTypingComplete(false);
-      const userMsg: Message = { id: state.id, type: 'user', content: `> ${state.question}` };
       
       setIsAiTyping(true);
       const aiMsg: Message = {
@@ -186,7 +184,6 @@ export function MathTerminal() {
       formRef.current?.reset();
       setFileData(null);
     } else if (state.status === 'error' && state.error) {
-      const userMsg: Message = { id: state.id, type: 'user', content: `> ${state.question}` };
       const errorMsg: Message = {
         id: state.id + 1,
         type: 'verification',
@@ -225,6 +222,62 @@ export function MathTerminal() {
   }, [messages, isAiTyping, pending]);
 
   return (
+    <>
+      <ScrollArea className="flex-1 pr-4 -mr-4" viewportRef={viewportRef}>
+        <div className="flex flex-col gap-4">
+          {messages.map((msg) => (
+            <div key={msg.id} className={cn(
+              'font-code text-sm',
+              msg.type === 'user' && 'text-accent',
+              msg.type === 'ai' && 'text-foreground',
+              msg.type === 'verification' && 'text-muted-foreground'
+            )}>
+              {msg.content}
+            </div>
+          ))}
+           {isAiTyping && <div className="text-foreground font-code text-sm blinking-cursor"></div>}
+           {pending && !isAiTyping && <BriefingDisplay />}
+        </div>
+      </ScrollArea>
+      <form ref={formRef} action={formAction} className="relative mt-4">
+        <input type="hidden" name="fileData" value={fileData || ''} />
+        <div className="relative flex w-full items-center">
+          <Input
+            name="question"
+            placeholder="> Bir matematik sorusu sorun... örn., 'x için çöz: 2x + 5 = 15'"
+            className="bg-background/50 border-accent/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-24 font-code"
+            autoComplete="off"
+            disabled={pending}
+          />
+          <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1">
+             <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              className="hidden"
+              accept="image/*,application/pdf"
+            />
+            <Button type="button" size="icon" variant="ghost" onClick={handleUploadClick} disabled={pending} className="h-8 w-8 text-accent hover:text-accent/80">
+              <Paperclip className="h-4 w-4" />
+            </Button>
+            <SubmitButton />
+          </div>
+        </div>
+         {fileData && (
+          <div className="mt-2 text-xs text-muted-foreground">
+            Bir dosya eklendi. Kaldırmak için alanı temizleyin veya yeni bir dosya seçin.
+          </div>
+        )}
+      </form>
+    </>
+  )
+}
+
+
+export function MathTerminal() {
+  // useFormStatus must be used within a <form> component.
+  // We can wrap the content in a new component.
+  return (
     <Card className="w-full max-w-3xl h-[80vh] flex flex-col bg-card/80 backdrop-blur-sm border-primary/20 shadow-lg shadow-primary/10">
       <CardHeader>
         <CardTitle className="font-headline text-primary flex items-center gap-2">
@@ -233,52 +286,7 @@ export function MathTerminal() {
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden">
-        <ScrollArea className="flex-1 pr-4 -mr-4" viewportRef={viewportRef}>
-          <div className="flex flex-col gap-4">
-            {messages.map((msg) => (
-              <div key={msg.id} className={cn(
-                'font-code text-sm',
-                msg.type === 'user' && 'text-accent',
-                msg.type === 'ai' && 'text-foreground',
-                msg.type === 'verification' && 'text-muted-foreground'
-              )}>
-                {msg.content}
-              </div>
-            ))}
-             {isAiTyping && <div className="text-foreground font-code text-sm blinking-cursor"></div>}
-             {pending && !isAiTyping && messages.length > 0 && <BriefingDisplay />}
-          </div>
-        </ScrollArea>
-        <form ref={formRef} action={formAction} className="relative mt-4">
-          <input type="hidden" name="fileData" value={fileData || ''} />
-          <div className="relative flex w-full items-center">
-            <Input
-              name="question"
-              placeholder="> Bir matematik sorusu sorun... örn., 'x için çöz: 2x + 5 = 15'"
-              className="bg-background/50 border-accent/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-24 font-code"
-              autoComplete="off"
-              disabled={pending}
-            />
-            <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1">
-               <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden"
-                accept="image/*,application/pdf"
-              />
-              <Button type="button" size="icon" variant="ghost" onClick={handleUploadClick} disabled={pending} className="h-8 w-8 text-accent hover:text-accent/80">
-                <Paperclip className="h-4 w-4" />
-              </Button>
-              <SubmitButton />
-            </div>
-          </div>
-           {fileData && (
-            <div className="mt-2 text-xs text-muted-foreground">
-              Bir dosya eklendi. Kaldırmak için alanı temizleyin veya yeni bir dosya seçin.
-            </div>
-          )}
-        </form>
+        <FormContent />
       </CardContent>
     </Card>
   );
