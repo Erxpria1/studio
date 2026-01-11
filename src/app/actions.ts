@@ -29,7 +29,7 @@ const getSolutionCache = (id: string) => cache(
 
 export type FormState = {
   id: string;
-  status: 'initial' | 'analyzing' | 'step_by_step' | 'verifying' | 'complete' | 'error';
+  status: 'initial' | 'analyzing' | 'step_by_step' | 'complete' | 'error';
   question?: string;
   error?: string;
   currentStep?: SolutionStep;
