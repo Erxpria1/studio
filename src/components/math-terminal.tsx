@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState, useMemo } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { getSolution, type SolutionState } from '@/app/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -72,15 +72,27 @@ function SubmitButton() {
   );
 }
 
-function AiSolution({ solutionSteps }: { solutionSteps: SolutionState['solution'] }) {
+function AiSolution({ 
+    solutionSteps, 
+    onSolutionComplete 
+}: { 
+    solutionSteps: SolutionState['solution'],
+    onSolutionComplete: () => void;
+}) {
     const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+
+    useEffect(() => {
+        if (solutionSteps && completedSteps.length === solutionSteps.length) {
+            onSolutionComplete();
+        }
+    }, [completedSteps, solutionSteps, onSolutionComplete]);
 
     if (!solutionSteps) return null;
 
     return (
         <div className="flex flex-col gap-4">
-            {solutionSteps.map((step, index) => (
-                <div key={index} className="border border-primary/30 rounded-md p-4 bg-card/50">
+            {solutionSteps.map((step) => (
+                <div key={step.stepNumber} className="border border-primary/30 rounded-md p-4 bg-card/50">
                     <Typewriter
                         text={`Adım ${step.stepNumber}: ${step.explanation}`}
                         speed={10}
@@ -229,9 +241,13 @@ function FormContent() {
 
     // Use a more robust way to prevent duplicate message processing
     const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : 0;
-    if (lastMessageId >= state.id + 2) return;
+    if (lastMessageId >= state.id + 1) return;
 
     const userMsg: Message = { id: state.id, type: 'user', content: `> ${state.question}` };
+     // Check if user message already exists
+    const userMsgExists = messages.some(msg => msg.id === userMsg.id);
+    const initialMessages = userMsgExists ? [] : [userMsg];
+
 
     if (state.status === 'success' && state.question && state.solution) {
       setIsAiTyping(true);
@@ -240,26 +256,17 @@ function FormContent() {
       const aiMsg: Message = {
         id: state.id + 1,
         type: 'ai',
-        content: <AiSolution solutionSteps={state.solution} />,
+        content: <AiSolution solutionSteps={state.solution} onSolutionComplete={() => {
+            setIsAiTyping(false);
+            setTypingComplete(true);
+        }} />,
       };
       
-      // Check if user message already exists
-      const userMsgExists = messages.some(msg => msg.id === userMsg.id);
-      
-      setMessages(prev => userMsgExists ? [...prev, aiMsg] : [...prev, userMsg, aiMsg]);
-
-      // Delay verification message until after solution is fully displayed
-      const totalTypingTime = (state.solution.reduce((acc, s) => acc + s.explanation.length, 0)) * 10 + state.solution.length * 500;
-      setTimeout(() => {
-          setIsAiTyping(false);
-          setTypingComplete(true);
-      }, totalTypingTime);
-      
+      setMessages(prev => [...prev, ...initialMessages, aiMsg]);
       formRef.current?.reset();
       setFileData(null);
 
     } else if (state.status === 'error' && state.error) {
-       const userMsgExists = messages.some(msg => msg.id === userMsg.id);
        const errorMsg: Message = {
         id: state.id + 1,
         type: 'verification',
@@ -270,7 +277,7 @@ function FormContent() {
           </div>
         )
       };
-      setMessages(prev => userMsgExists ? [...prev, errorMsg] : [...prev, userMsg, errorMsg]);
+      setMessages(prev => [...prev, ...initialMessages, errorMsg]);
       formRef.current?.reset();
       setFileData(null);
       setIsAiTyping(false);
@@ -281,16 +288,17 @@ function FormContent() {
     if (typingComplete && state.status === 'success' && state.isCorrect !== undefined) {
         const lastMessage = messages[messages.length - 1];
         // Ensure verification message is not already present
-        if (lastMessage?.type !== 'verification') {
+        if (lastMessage?.type !== 'verification' && lastMessage.id < state.id + 2) {
+             const verificationMsgContent = (
+                <div className="flex items-center gap-2">
+                    {state.isCorrect ? <CheckCircle2 className="text-green-500" /> : <XCircle className="text-red-500" />}
+                    <Typewriter text={state.verificationDetails || ''} speed={10} />
+                </div>
+            );
             const verificationMsg: Message = {
                 id: state.id + 2,
                 type: 'verification',
-                content: (
-                    <div className="flex items-center gap-2">
-                        {state.isCorrect ? <CheckCircle2 className="text-green-500" /> : <XCircle className="text-red-500" />}
-                        <span>{state.verificationDetails}</span>
-                    </div>
-                )
+                content: verificationMsgContent,
             };
             setMessages(prev => [...prev, verificationMsg]);
         }
@@ -369,3 +377,5 @@ export function MathTerminal() {
     </Card>
   );
 }
+
+    
