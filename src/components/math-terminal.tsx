@@ -11,6 +11,7 @@ import { Typewriter } from '@/components/typewriter';
 import { CheckCircle2, XCircle, AlertTriangle, Send, Paperclip } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 type Message = {
   id: number;
@@ -23,6 +24,37 @@ const initialState: SolutionState = {
   status: 'success',
   question: '',
 };
+
+const briefings = [
+  'AI çekirdekleri etkinleştiriliyor...',
+  'Matematiksel matris taranıyor...',
+  'Sinir ağları sorgulanıyor...',
+  'Olasılıklar hesaplanıyor...',
+  'Çözüm yolları analiz ediliyor...',
+  'Doğrulama protokolleri başlatılıyor...',
+  'Kuantum tünelleme yoluyla veri alınıyor...',
+  'Siber uzayda çözüm aranıyor...',
+  'Mantık kapıları hizalanıyor...',
+  'Sonuçlar derleniyor...',
+];
+
+function BriefingDisplay() {
+    const [currentBriefingIndex, setCurrentBriefingIndex] = useState(0);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setCurrentBriefingIndex((prevIndex) => (prevIndex + 1) % briefings.length);
+        }, 1500);
+
+        return () => clearInterval(interval);
+    }, []);
+
+    return (
+        <div className="font-code text-sm text-primary blinking-cursor">
+            {briefings[currentBriefingIndex]}
+        </div>
+    );
+}
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -50,6 +82,8 @@ export function MathTerminal() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const [fileData, setFileData] = useState<string | null>(null);
+  const { pending } = useFormStatus();
+
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -72,14 +106,15 @@ export function MathTerminal() {
     } else if (file.type === 'application/pdf') {
         try {
             const pdfjs = await import('pdfjs-dist');
-            pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+            const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs');
+            pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const arrayBuffer = e.target?.result as ArrayBuffer;
                 if (arrayBuffer) {
                     try {
-                        const pdf = await pdfjs.getDocument(new Uint8Array(arrayBuffer)).promise;
+                        const pdf: PDFDocumentProxy = await pdfjs.getDocument(new Uint8Array(arrayBuffer)).promise;
                         let fullText = '';
                         for (let i = 1; i <= pdf.numPages; i++) {
                             const page = await pdf.getPage(i);
@@ -166,7 +201,7 @@ export function MathTerminal() {
       formRef.current?.reset();
       setFileData(null);
     }
-  }, [state, messages]);
+  }, [state]);
 
   useEffect(() => {
     if (typingComplete && state.status === 'success' && messages[messages.length - 1]?.type !== 'verification') {
@@ -187,7 +222,7 @@ export function MathTerminal() {
 
   useEffect(() => {
     viewportRef.current?.scrollTo({ top: viewportRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, isAiTyping]);
+  }, [messages, isAiTyping, pending]);
 
   return (
     <Card className="w-full max-w-3xl h-[80vh] flex flex-col bg-card/80 backdrop-blur-sm border-primary/20 shadow-lg shadow-primary/10">
@@ -211,6 +246,7 @@ export function MathTerminal() {
               </div>
             ))}
              {isAiTyping && <div className="text-foreground font-code text-sm blinking-cursor"></div>}
+             {pending && !isAiTyping && messages.length > 0 && <BriefingDisplay />}
           </div>
         </ScrollArea>
         <form ref={formRef} action={formAction} className="relative mt-4">
@@ -221,7 +257,7 @@ export function MathTerminal() {
               placeholder="> Bir matematik sorusu sorun... örn., 'x için çöz: 2x + 5 = 15'"
               className="bg-background/50 border-accent/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-24 font-code"
               autoComplete="off"
-              disabled={useFormStatus().pending}
+              disabled={pending}
             />
             <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1">
                <input
@@ -231,7 +267,7 @@ export function MathTerminal() {
                 className="hidden"
                 accept="image/*,application/pdf"
               />
-              <Button type="button" size="icon" variant="ghost" onClick={handleUploadClick} disabled={useFormStatus().pending} className="h-8 w-8 text-accent hover:text-accent/80">
+              <Button type="button" size="icon" variant="ghost" onClick={handleUploadClick} disabled={pending} className="h-8 w-8 text-accent hover:text-accent/80">
                 <Paperclip className="h-4 w-4" />
               </Button>
               <SubmitButton />
