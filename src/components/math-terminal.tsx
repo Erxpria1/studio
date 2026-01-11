@@ -107,7 +107,9 @@ function FormContent() {
   const [nextStepState, nextStepAction, isGettingNextStep] = useActionState(getNextStep, initialFormState);
 
   const activeState = useMemo(() => {
+    // If nextStepState has been updated (is no longer initial), it's the active one.
     if (nextStepState.status !== 'initial') return nextStepState;
+    // Otherwise, the submitState is the active one.
     return submitState;
   }, [submitState, nextStepState]);
 
@@ -203,11 +205,6 @@ function FormContent() {
 
   const isProcessing = isSubmitting || isGettingNextStep;
 
-  const handleNextStep = () => {
-    if (isGettingNextStep) return;
-    nextStepAction();
-    setMessages(prev => [...prev, { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}])
-  };
   
   useEffect(() => {
     if (activeState.id === '0') return;
@@ -226,9 +223,9 @@ function FormContent() {
     } else if (activeState.status === 'step_by_step' && activeState.currentStep) {
         const { currentStep, currentStepIndex, totalSteps } = activeState;
         
-        const newMessages = [...messages];
+        let newMessages = [...messages];
         if (isBriefingActive) {
-            newMessages.pop();
+            newMessages.pop(); // Remove briefing message
         }
 
         const userMsgExists = newMessages.some(msg => msg.type === 'user');
@@ -251,9 +248,14 @@ function FormContent() {
                         <Latex formula={currentStep.formula} />
                     </div>
                     {showNextBtn && (
-                        <Button onClick={handleNextStep} disabled={isProcessing} size="icon" variant="ghost" className="absolute bottom-2 right-2 text-yellow-500 hover:text-yellow-400 h-8 w-8">
-                           <ArrowRightCircle className="h-6 w-6" />
-                        </Button>
+                       <form action={() => {
+                            nextStepAction(activeState);
+                            setMessages(prev => [...prev, { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}])
+                       }}>
+                            <Button type="submit" disabled={isProcessing} size="icon" variant="ghost" className="absolute bottom-2 right-2 text-yellow-500 hover:text-yellow-400 h-8 w-8">
+                               <ArrowRightCircle className="h-6 w-6" />
+                            </Button>
+                        </form>
                     )}
                 </div>
             ),
