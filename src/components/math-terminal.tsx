@@ -11,9 +11,6 @@ import { Typewriter } from '@/components/typewriter';
 import { CheckCircle2, XCircle, AlertTriangle, Send, Paperclip } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import * as pdfjsLib from 'pdfjs-dist';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 type Message = {
   id: number;
@@ -54,6 +51,14 @@ export function MathTerminal() {
   const { toast } = useToast();
   const [fileData, setFileData] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [pdfjsLib, setPdfjsLib] = useState<any>(null);
+
+  useEffect(() => {
+    import('pdfjs-dist').then(pdfjs => {
+      pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+      setPdfjsLib(pdfjs);
+    });
+  }, []);
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -74,6 +79,14 @@ export function MathTerminal() {
       };
       reader.readAsDataURL(file);
     } else if (file.type === 'application/pdf') {
+        if (!pdfjsLib) {
+            toast({
+                variant: 'destructive',
+                title: 'PDF görüntüleyici hazırlanıyor',
+                description: 'Lütfen birkaç saniye sonra tekrar deneyin.',
+            });
+            return;
+        }
         const reader = new FileReader();
         reader.onload = async (e) => {
             const arrayBuffer = e.target?.result as ArrayBuffer;
@@ -84,7 +97,7 @@ export function MathTerminal() {
                     for (let i = 1; i <= pdf.numPages; i++) {
                         const page = await pdf.getPage(i);
                         const textContent = await page.getTextContent();
-                        fullText += textContent.items.map(item => item.str).join(' ') + '\n';
+                        fullText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
                     }
                     
                     const textAsDataUri = `data:text/plain;base64,${btoa(unescape(encodeURIComponent(fullText)))}`;
@@ -158,7 +171,7 @@ export function MathTerminal() {
       formRef.current?.reset();
       setFileData(null);
     }
-  }, [state]);
+  }, [state, messages]);
 
   useEffect(() => {
     if (typingComplete && state.status === 'success' && messages[messages.length - 1]?.type !== 'verification') {
