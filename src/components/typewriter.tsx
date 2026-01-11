@@ -14,13 +14,18 @@ export function Typewriter({ text, speed = 20, onComplete, className }: Typewrit
 
   useEffect(() => {
     let isMounted = true;
-    setDisplayedText(""); 
     if (!text) {
         if (onComplete) onComplete();
         return;
     };
     
-    let i = 0;
+    // Only start typing if the displayed text is not the full text yet.
+    if (displayedText.length === text.length) {
+      if(onComplete) onComplete();
+      return;
+    }
+    
+    let i = displayedText.length;
     const intervalId = setInterval(() => {
       if (!isMounted) {
         clearInterval(intervalId);
@@ -42,7 +47,7 @@ export function Typewriter({ text, speed = 20, onComplete, className }: Typewrit
         isMounted = false;
         clearInterval(intervalId);
     }
-  }, [text, speed, onComplete]);
+  }, [text, speed, onComplete, displayedText.length]);
 
   return (
     <div className={className}>
