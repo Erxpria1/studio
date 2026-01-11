@@ -15,13 +15,13 @@ export function Typewriter({ text, speed = 20, onComplete, className }: Typewrit
   useEffect(() => {
     let isMounted = true;
     if (!text) {
-        if (onComplete) onComplete();
-        return;
-    };
-    
-    // Only start typing if the displayed text is not the full text yet.
+      if (onComplete) onComplete();
+      return;
+    }
+
     if (displayedText.length === text.length) {
-      if(onComplete) onComplete();
+      // Already finished, no need to do anything.
+      // The onComplete should have been called already.
       return;
     }
     
