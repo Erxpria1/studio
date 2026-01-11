@@ -9,6 +9,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { checkTurkish } from './turkish-checker';
 
 const GenerateStepByStepSolutionInputSchema = z.object({
   question: z.string().describe('The mathematical question to be solved.'),
@@ -28,7 +29,7 @@ const prompt = ai.definePrompt({
   name: 'generateStepByStepSolutionPrompt',
   input: {schema: GenerateStepByStepSolutionInputSchema},
   output: {schema: GenerateStepByStepSolutionOutputSchema},
-  prompt: `You are an expert mathematics solver that specializes in explaining the answer step by step.  Provide a detailed step-by-step solution to the following mathematical question:\n\nQuestion: {{{question}}}`,
+  prompt: `Sen adım adım çözüm açıklama konusunda uzman bir matematik çözücüsün. Aşağıdaki matematik sorusuna ayrıntılı, adım adım bir çözüm sun:\n\nSoru: {{{question}}}`,
 });
 
 const generateStepByStepSolutionFlow = ai.defineFlow(
@@ -38,7 +39,17 @@ const generateStepByStepSolutionFlow = ai.defineFlow(
     outputSchema: GenerateStepByStepSolutionOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
-    return output!;
+    const {output: initialOutput} = await prompt(input);
+    if (!initialOutput) {
+      throw new Error("Çözüm üretilemedi.");
+    }
+    
+    // First check
+    const firstCheck = await checkTurkish({ text: initialOutput.solution });
+
+    // Second check
+    const secondCheck = await checkTurkish({ text: firstCheck.correctedText });
+
+    return { solution: secondCheck.correctedText };
   }
 );

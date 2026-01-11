@@ -10,6 +10,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { checkTurkish } from './turkish-checker';
 
 const VerifyAiGeneratedSolutionInputSchema = z.object({
   question: z.string().describe('The mathematical question asked by the user.'),
@@ -35,14 +36,14 @@ const verifyAiGeneratedSolutionPrompt = ai.definePrompt({
   name: 'verifyAiGeneratedSolutionPrompt',
   input: {schema: VerifyAiGeneratedSolutionInputSchema},
   output: {schema: VerifyAiGeneratedSolutionOutputSchema},
-  prompt: `You are an expert mathematical solution checker. You are given a question and a solution.
-Your job is to verify the solution and determine if it is correct.
+  prompt: `Sen uzman bir matematiksel çözüm denetleyicisisin. Sana bir soru ve bir çözüm verilecek.
+Görevin, çözümü doğrulamak ve doğru olup olmadığını belirlemek.
 
-Question: {{{question}}}
-Solution: {{{aiSolution}}}
+Soru: {{{question}}}
+Çözüm: {{{aiSolution}}}
 
-Provide a detailed breakdown of the verification process and indicate whether the solution is correct.
-Return the answer in JSON format according to the output schema.`,
+Doğrulama sürecinin ayrıntılı bir dökümünü sun ve çözümün doğru olup olmadığını belirt.
+Cevabı, çıktı şemasına göre JSON formatında döndür.`,
 });
 
 const verifyAiGeneratedSolutionFlow = ai.defineFlow(
@@ -54,7 +55,17 @@ const verifyAiGeneratedSolutionFlow = ai.defineFlow(
   async input => {
     // TODO: Integrate with WebAssembly-compiled Rust mathematical engine for more accurate verification.
     // Currently, it relies solely on the LLM's reasoning.
-    const {output} = await verifyAiGeneratedSolutionPrompt(input);
-    return output!;
+    const {output: initialOutput} = await verifyAiGeneratedSolutionPrompt(input);
+    if (!initialOutput) {
+      throw new Error("Doğrulama detayı üretilemedi.");
+    }
+    
+    const firstCheck = await checkTurkish({ text: initialOutput.verificationDetails });
+    const secondCheck = await checkTurkish({ text: firstCheck.correctedText });
+
+    return { 
+        isCorrect: initialOutput.isCorrect,
+        verificationDetails: secondCheck.correctedText 
+    };
   }
 );

@@ -5,7 +5,7 @@ import { verifyAiGeneratedSolution } from '@/ai/flows/verify-ai-generated-soluti
 import { z } from 'zod';
 
 const MathQuestionSchema = z.object({
-  question: z.string().min(3, "Question must be at least 3 characters long."),
+  question: z.string().min(3, "Soru en az 3 karakter uzunluğunda olmalıdır."),
 });
 
 export type SolutionState = {
@@ -59,7 +59,7 @@ export async function getSolution(
       id: Date.now(),
       status: 'error',
       question: validQuestion,
-      error: 'An error occurred while generating the solution. Please try again.',
+      error: 'Çözüm oluşturulurken bir hata oluştu. Lütfen tekrar deneyin.',
     };
   }
 }

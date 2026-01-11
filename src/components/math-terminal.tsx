@@ -58,8 +58,8 @@ export function MathTerminal() {
     const file = event.target.files?.[0];
     if (file) {
       toast({
-        title: "File ready",
-        description: `"${file.name}" is ready to be analyzed. Add a question and hit send.`,
+        title: "Dosya hazır",
+        description: `"${file.name}" analiz edilmeye hazır. Bir soru ekleyin ve gönder'e basın.`,
       });
     }
   };
@@ -93,7 +93,7 @@ export function MathTerminal() {
         content: (
           <div className="flex items-center gap-2 text-destructive">
             <AlertTriangle />
-            <span>Error: {state.error}</span>
+            <span>Hata: {state.error}</span>
           </div>
         )
       };
@@ -127,7 +127,7 @@ export function MathTerminal() {
     <Card className="w-full max-w-3xl h-[80vh] flex flex-col bg-card/80 backdrop-blur-sm border-primary/20 shadow-lg shadow-primary/10">
       <CardHeader>
         <CardTitle className="font-headline text-primary flex items-center gap-2">
-          <span>// MATH_CYBER_TERMINAL v1.0</span>
+          <span>// MATEMATİK_SİBER_TERMINAL v1.0</span>
           <span className="h-4 w-4 bg-primary animate-pulse rounded-full" />
         </CardTitle>
       </CardHeader>
@@ -151,7 +151,7 @@ export function MathTerminal() {
           <div className="relative flex w-full items-center">
             <Input
               name="question"
-              placeholder="> Ask a math question... e.g., 'Solve for x: 2x + 5 = 15'"
+              placeholder="> Bir matematik sorusu sorun... örn., 'x için çöz: 2x + 5 = 15'"
               className="bg-background/50 border-accent/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-24 font-code"
               autoComplete="off"
               disabled={useFormStatus().pending}
