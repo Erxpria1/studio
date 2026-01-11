@@ -200,6 +200,14 @@ function FormContent() {
       event.target.value = '';
     }
   };
+
+  const isProcessing = isSubmitting || isGettingNextStep;
+
+  const handleNextStep = () => {
+    if (isGettingNextStep) return;
+    nextStepAction();
+    setMessages(prev => [...prev, { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}])
+  };
   
   useEffect(() => {
     if (activeState.id === '0') return;
@@ -216,7 +224,7 @@ function FormContent() {
       formRef.current?.reset();
       setFileData(null);
     } else if (activeState.status === 'step_by_step' && activeState.currentStep) {
-        const { currentStep } = activeState;
+        const { currentStep, currentStepIndex, totalSteps } = activeState;
         
         const newMessages = [...messages];
         if (isBriefingActive) {
@@ -227,6 +235,8 @@ function FormContent() {
         if (!userMsgExists && activeState.question) {
             newMessages.unshift({ id: activeState.id + '-user', type: 'user', content: `> ${activeState.question}` });
         }
+        
+        const showNextBtn = currentStepIndex !== undefined && totalSteps !== undefined && currentStepIndex < totalSteps - 1;
 
         const newStepMessage: Message = {
             id: `${activeState.id}-step-${currentStep.stepNumber}`,
@@ -240,6 +250,11 @@ function FormContent() {
                     <div className="font-code text-accent mt-2 p-2 bg-black/20 rounded-md">
                         <Latex formula={currentStep.formula} />
                     </div>
+                    {showNextBtn && (
+                        <Button onClick={handleNextStep} disabled={isProcessing} size="icon" variant="ghost" className="absolute bottom-2 right-2 text-yellow-500 hover:text-yellow-400 h-8 w-8">
+                           <ArrowRightCircle className="h-6 w-6" />
+                        </Button>
+                    )}
                 </div>
             ),
             stepNumber: currentStep.stepNumber
@@ -286,27 +301,19 @@ function FormContent() {
     submitAction(formData);
   };
   
-  const handleNextStep = () => {
-    if (isGettingNextStep) return;
-    nextStepAction();
-    setMessages(prev => [...prev, { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}])
-  };
-
   useEffect(() => {
     viewportRef.current?.scrollTo({ top: viewportRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, activeState.status]);
 
-  const showNextStepButton = activeState.status === 'step_by_step' && activeState.currentStepIndex! < activeState.totalSteps! - 1;
-  const isProcessing = isSubmitting || isGettingNextStep;
   const isTerminalOccupied = activeState.status !== 'initial' && activeState.status !== 'complete' && activeState.status !== 'error';
 
   return (
     <>
       <ScrollArea className="flex-1 pr-4 -mr-4" viewportRef={viewportRef}>
         <div className="flex flex-col gap-4">
-          {messages.map((msg, index) => (
+          {messages.map((msg) => (
             <div key={msg.id} className={cn(
-              'font-code text-sm relative',
+              'font-code text-sm',
               msg.type === 'user' && 'text-primary',
               msg.type === 'ai_step' && 'text-foreground',
               msg.type === 'verification' && 'text-muted-foreground',
@@ -314,14 +321,6 @@ function FormContent() {
               msg.type === 'briefing' && 'text-primary'
             )}>
               {msg.content}
-              {msg.type === 'ai_step' && 
-                activeState.status === 'step_by_step' && 
-                activeState.currentStep?.stepNumber === msg.stepNumber && 
-                activeState.currentStepIndex! < activeState.totalSteps! - 1 && (
-                 <Button onClick={handleNextStep} disabled={isProcessing} size="icon" variant="ghost" className="absolute bottom-2 right-2 text-yellow-500 hover:text-yellow-400 h-8 w-8">
-                    <ArrowRightCircle className="h-6 w-6" />
-                 </Button>
-              )}
             </div>
           ))}
         </div>
