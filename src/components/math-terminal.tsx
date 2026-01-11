@@ -92,7 +92,7 @@ function AiSolution({
     return (
         <div className="flex flex-col gap-4">
             {solutionSteps.map((step) => (
-                <div key={step.stepNumber} className="border border-primary/30 rounded-md p-4 bg-card/50">
+                <div key={step.stepNumber} className="border border-primary/30 rounded-md p-4 bg-black/20">
                     <Typewriter
                         text={`Adım ${step.stepNumber}: ${step.explanation}`}
                         speed={10}
@@ -317,7 +317,7 @@ function FormContent() {
           {messages.map((msg) => (
             <div key={msg.id} className={cn(
               'font-code text-sm',
-              msg.type === 'user' && 'text-accent',
+              msg.type === 'user' && 'text-primary',
               msg.type === 'ai' && 'text-foreground',
               msg.type === 'verification' && 'text-muted-foreground'
             )}>
@@ -333,7 +333,7 @@ function FormContent() {
           <Input
             name="question"
             placeholder="> Bir matematik sorusu sorun... örn., 'x için çöz: 2x + 5 = 15'"
-            className="bg-background/50 border-accent/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-24 font-code"
+            className="bg-background/50 border-primary/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-24 font-code"
             autoComplete="off"
             disabled={pending}
           />
@@ -377,5 +377,3 @@ export function MathTerminal() {
     </Card>
   );
 }
-
-    
