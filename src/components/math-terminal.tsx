@@ -1,8 +1,8 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState, useMemo } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { submitQuestion, getNextStep, type FormState } from '@/app/actions';
+import { submitQuestion, type FormState } from '@/app/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,15 @@ const briefings = [
   'Mantık kapıları hizalanıyor...',
   'Sonuçlar derleniyor...',
 ];
+
+// Metni istenmeyen karakterlerden temizleyen fonksiyon
+function cleanText(text: string | undefined | null): string {
+    if (!text) return "";
+    // Kontrol karakterlerini (form feed vb.) ve diğer istenmeyen karakterleri temizle
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/[\x00-\x1F\x7F-\x9F]/g, "").replace(/Aım/g, "Adım");
+}
+
 
 function BriefingDisplay() {
     const [currentBriefingIndex, setCurrentBriefingIndex] = useState(0);
@@ -80,7 +89,7 @@ function Latex({ formula }: { formula: string }) {
       try {
         const katex = (await import('katex')).default;
         if (ref.current && isMounted) {
-          katex.render(formula, ref.current, {
+          katex.render(cleanText(formula), ref.current, {
             throwOnError: false,
             displayMode: true,
           });
@@ -88,7 +97,7 @@ function Latex({ formula }: { formula: string }) {
       } catch (error) {
         console.error("KaTeX yüklenirken veya işlenirken hata:", error);
         if (ref.current && isMounted) {
-          ref.current.textContent = formula;
+          ref.current.textContent = cleanText(formula);
         }
       }
     };
@@ -151,13 +160,10 @@ function FormContent() {
                     fullText += (textContent.items as any[]).map((item: any) => item.str).join(' ') + '\n';
                 }
                 
-                const textEncoder = new TextEncoder();
-                const utf8Bytes = textEncoder.encode(fullText);
-                let binary = '';
-                utf8Bytes.forEach(byte => {
-                    binary += String.fromCharCode(byte);
-                });
-                const textAsDataUri = `data:text/plain;base64,${btoa(binary)}`;
+                 // Use a more robust method to convert to base64 to avoid character encoding issues
+                const binary = new Uint8Array(fullText.split('').map(c => c.charCodeAt(0)));
+                const base64 = btoa(String.fromCharCode.apply(null, Array.from(binary)));
+                const textAsDataUri = `data:text/plain;base64,${base64}`;
 
                 setFileData(textAsDataUri);
                 toast({
@@ -208,25 +214,23 @@ function FormContent() {
     } else if (state.status === 'step_by_step' && state.currentStep) {
         const { currentStep, currentStepIndex, totalSteps, fullSolution } = state;
         
-        let newMessages = [...messages];
-        if (isBriefingActive) {
-            newMessages.pop(); // Remove briefing message
+        // Always start with user message if it's the first step
+        let newMessages: Message[] = [];
+        if (currentStepIndex === 0 && state.question) {
+             newMessages.push({ id: state.id + '-user', type: 'user', content: `> ${state.question}` });
+        } else {
+            newMessages = isBriefingActive ? messages.slice(0, -1) : messages;
         }
 
-        const userMsgExists = newMessages.some(msg => msg.type === 'user');
-        if (!userMsgExists && state.question) {
-            newMessages.unshift({ id: state.id + '-user', type: 'user', content: `> ${state.question}` });
-        }
-        
         const showNextBtn = currentStepIndex !== undefined && totalSteps !== undefined && currentStepIndex < totalSteps - 1;
 
         const newStepMessage: Message = {
-            id: `${state.id}-step-${currentStep.stepNumber}`,
+            id: `${state.id}-step-${currentStepIndex}`,
             type: 'ai_step',
             content: (
                 <div className="border border-primary/30 rounded-md p-4 bg-black/20 relative pb-12">
                     <Typewriter
-                        text={`Adım ${currentStep.stepNumber}: ${currentStep.explanation}`}
+                        text={cleanText(`Adım ${currentStep.stepNumber}: ${currentStep.explanation}`)}
                         speed={10}
                     />
                     <div className="font-code text-accent mt-2 p-2 bg-black/20 rounded-md">
@@ -249,7 +253,8 @@ function FormContent() {
             stepNumber: currentStep.stepNumber
         };
         
-        const existingStepIndex = newMessages.findIndex(m => m.id === newStepMessage.id);
+        // If this step is already in messages, replace it. Otherwise, add it.
+        const existingStepIndex = newMessages.findIndex(m => m.type === 'ai_step' && m.stepNumber === currentStep.stepNumber);
         if (existingStepIndex > -1) {
             newMessages[existingStepIndex] = newStepMessage;
         } else {
@@ -270,27 +275,33 @@ function FormContent() {
             content: (
                 <div className="flex items-start gap-2 p-4 border border-primary/20 rounded-md bg-black/20">
                     {state.isCorrect ? <CheckCircle2 className="text-green-500 mt-1 h-5 w-5 flex-shrink-0" /> : <XCircle className="text-red-500 mt-1 h-5 w-5 flex-shrink-0" />}
-                    <Typewriter text={state.verificationDetails || ''} speed={10} />
+                    <Typewriter text={cleanText(state.verificationDetails)} speed={10} />
                 </div>
             )
         };
         setMessages([...newMessages, verificationMsg]);
+    } else if(state.status === 'initial' || state.status === 'error') {
+         formRef.current?.reset();
+         setFileData(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
-  const handleSubmit = (formData: FormData) => {
+  const handleFormAction = (formData: FormData) => {
     const question = formData.get('question');
-    if (!question || isProcessing) return;
+    const isNextStep = formData.get('next_step') === 'true';
 
-    // Clear previous messages except the new user question
-    setMessages([
-        { id: Date.now().toString() + '-user', type: 'user', content: `> ${question}` },
-        { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}
-    ]);
+    if (isProcessing) return;
     
-    // This will be handled by the form's action prop now
-    // formAction(formData);
+    if (isNextStep) {
+         setMessages(prev => [...prev, { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}])
+    } else if (question) {
+        setMessages([
+            { id: Date.now().toString() + '-user', type: 'user', content: `> ${question}` },
+            { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}
+        ]);
+    }
+    formAction(formData);
   };
   
   useEffect(() => {
@@ -320,16 +331,7 @@ function FormContent() {
       <div className="mt-4">
         <form 
             ref={formRef} 
-            action={(formData) => {
-                const question = formData.get('question') as string;
-                if (question && !isProcessing) {
-                     setMessages([
-                        { id: Date.now().toString() + '-user', type: 'user', content: `> ${question}` },
-                        { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}
-                    ]);
-                    formAction(formData);
-                }
-            }} 
+            action={handleFormAction}
             className="relative"
         >
           <input type="hidden" name="fileData" value={fileData || ''} />
@@ -382,5 +384,3 @@ export function MathTerminal() {
     </Card>
   );
 }
-
-    
