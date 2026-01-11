@@ -1,0 +1,9 @@
+{
+  "name": "MathCyber",
+  "short_name": "MathCyber",
+  "description": "AI-Powered Math Solver with a Cyberpunk UI",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1E1E1E",
+  "theme_color": "#1E1E1E"
+}

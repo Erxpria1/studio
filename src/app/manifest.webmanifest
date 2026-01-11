@@ -1,0 +1,22 @@
+{
+  "name": "MathCyber",
+  "short_name": "MathCyber",
+  "description": "AI-Powered Math Solver with a Cyberpunk UI",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#1E1E1E",
+  "background_color": "#1E1E1E",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait"
+}
