@@ -12,7 +12,6 @@ import { CheckCircle2, XCircle, AlertTriangle, Send, Paperclip } from 'lucide-re
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import 'katex/dist/katex.min.css';
 
 type Message = {
   id: number;
@@ -104,10 +103,11 @@ function Latex({ formula }: { formula: string }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let isMounted = true;
     const renderLatex = async () => {
       try {
         const katex = (await import('katex')).default;
-        if (ref.current) {
+        if (ref.current && isMounted) {
           katex.render(formula, ref.current, {
             throwOnError: false,
             displayMode: true,
@@ -115,12 +115,16 @@ function Latex({ formula }: { formula: string }) {
         }
       } catch (error) {
         console.error("KaTeX yüklenirken veya işlenirken hata:", error);
-        if (ref.current) {
+        if (ref.current && isMounted) {
           ref.current.textContent = formula;
         }
       }
     };
     renderLatex();
+
+    return () => {
+      isMounted = false;
+    };
   }, [formula]);
 
   return <div ref={ref} />;
