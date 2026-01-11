@@ -13,7 +13,8 @@ export function Typewriter({ text, speed = 20, onComplete, className }: Typewrit
   const [displayedText, setDisplayedText] = useState("");
 
   useEffect(() => {
-    setDisplayedText("");
+    let isMounted = true;
+    setDisplayedText(""); 
     if (!text) {
         if (onComplete) onComplete();
         return;
@@ -21,6 +22,11 @@ export function Typewriter({ text, speed = 20, onComplete, className }: Typewrit
     
     let i = 0;
     const intervalId = setInterval(() => {
+      if (!isMounted) {
+        clearInterval(intervalId);
+        return;
+      }
+
       if (i < text.length) {
         setDisplayedText((prev) => prev + text.charAt(i));
         i++;
@@ -32,7 +38,10 @@ export function Typewriter({ text, speed = 20, onComplete, className }: Typewrit
       }
     }, speed);
 
-    return () => clearInterval(intervalId);
+    return () => {
+        isMounted = false;
+        clearInterval(intervalId);
+    }
   }, [text, speed, onComplete]);
 
   return (

@@ -1,6 +1,6 @@
 'use server';
 
-import { generateStepByStepSolution } from '@/ai/flows/generate-step-by-step-solution';
+import { generateStepByStepSolution, type GenerateStepByStepSolutionOutput } from '@/ai/flows/generate-step-by-step-solution';
 import { verifyAiGeneratedSolution } from '@/ai/flows/verify-ai-generated-solution';
 import { z } from 'zod';
 
@@ -13,7 +13,7 @@ export type SolutionState = {
   id: number;
   status: 'success' | 'error';
   question: string;
-  solution?: string;
+  solution?: GenerateStepByStepSolutionOutput['solution'];
   isCorrect?: boolean;
   verificationDetails?: string;
   error?: string;
@@ -50,20 +50,22 @@ export async function getSolution(
     const solutionResult = await generateStepByStepSolution({ question: validQuestion, fileData });
     console.log("Çözüm sonucu alındı:", solutionResult);
 
-    const aiSolution = solutionResult.solution;
-    if (!aiSolution) {
+    if (!solutionResult.solution) {
       throw new Error("Yapay zeka bir çözüm üretemedi.");
     }
     
+    // For verification, we can join the steps into a single string
+    const aiSolutionText = solutionResult.solution.map(step => `${step.explanation} ${step.formula}`).join('\n');
+    
     console.log("Çözüm doğrulaması başlatılıyor...");
-    const verificationResult = await verifyAiGeneratedSolution({ question: validQuestion, aiSolution });
+    const verificationResult = await verifyAiGeneratedSolution({ question: validQuestion, aiSolution: aiSolutionText });
     console.log("Doğrulama sonucu alındı:", verificationResult);
 
     return {
       id: Date.now(),
       status: 'success',
       question: validQuestion,
-      solution: aiSolution,
+      solution: solutionResult.solution,
       isCorrect: verificationResult.isCorrect,
       verificationDetails: verificationResult.verificationDetails,
     };

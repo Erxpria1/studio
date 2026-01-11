@@ -17,8 +17,14 @@ const GenerateStepByStepSolutionInputSchema = z.object({
 });
 export type GenerateStepByStepSolutionInput = z.infer<typeof GenerateStepByStepSolutionInputSchema>;
 
+const SolutionStepSchema = z.object({
+  stepNumber: z.number().describe('The step number in the solution process.'),
+  explanation: z.string().describe('The verbal explanation for this step.'),
+  formula: z.string().describe('The mathematical formula or calculation for this step, formatted as a LaTeX string.'),
+});
+
 const GenerateStepByStepSolutionOutputSchema = z.object({
-  solution: z.string().describe('The step-by-step solution to the mathematical question.'),
+  solution: z.array(SolutionStepSchema).describe('An array of steps representing the step-by-step solution to the mathematical question.'),
 });
 export type GenerateStepByStepSolutionOutput = z.infer<typeof GenerateStepByStepSolutionOutputSchema>;
 
@@ -30,7 +36,9 @@ const prompt = ai.definePrompt({
   name: 'generateStepByStepSolutionPrompt',
   input: {schema: GenerateStepByStepSolutionInputSchema},
   output: {schema: GenerateStepByStepSolutionOutputSchema},
-  prompt: `Sen adım adım çözüm açıklama konusunda uzman bir matematik çözücüsün. Aşağıdaki matematik sorusuna ayrıntılı, adım adım bir çözüm sun:\n\nSoru: {{{question}}}{{#if fileData}}
+  prompt: `Sen adım adım çözüm açıklama konusunda uzman bir matematik çözücüsün. Aşağıdaki matematik sorusuna ayrıntılı, 3 adımlı bir çözüm sun. Her adım için, bir açıklama ve bir LaTeX formatında formül sağla.
+
+Soru: {{{question}}}{{#if fileData}}
 
 Ayrıca soruyu çözmek için aşağıdaki dosyayı da kullan:
 {{media url=fileData}}
@@ -45,16 +53,19 @@ const generateStepByStepSolutionFlow = ai.defineFlow(
   },
   async input => {
     const {output: initialOutput} = await prompt(input);
-    if (!initialOutput) {
+    if (!initialOutput || !initialOutput.solution) {
       throw new Error("Çözüm üretilemedi.");
     }
-    
-    // First check
-    const firstCheck = await checkTurkish({ text: initialOutput.solution });
 
-    // Second check
-    const secondCheck = await checkTurkish({ text: firstCheck.correctedText });
+    const checkedSolution = await Promise.all(initialOutput.solution.map(async (step) => {
+        const firstCheck = await checkTurkish({ text: step.explanation });
+        const secondCheck = await checkTurkish({ text: firstCheck.correctedText });
+        return {
+            ...step,
+            explanation: secondCheck.correctedText
+        };
+    }));
 
-    return { solution: secondCheck.correctedText };
+    return { solution: checkedSolution };
   }
 );

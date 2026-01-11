@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useEffect, useRef, useState, useMemo } from 'react';
 import { useFormStatus } from 'react-dom';
 import { getSolution, type SolutionState } from '@/app/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { CheckCircle2, XCircle, AlertTriangle, Send, Paperclip } from 'lucide-re
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import 'katex/dist/katex.min.css';
 
 type Message = {
   id: number;
@@ -72,17 +73,72 @@ function SubmitButton() {
   );
 }
 
+function AiSolution({ solutionSteps }: { solutionSteps: SolutionState['solution'] }) {
+    const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+
+    if (!solutionSteps) return null;
+
+    return (
+        <div className="flex flex-col gap-4">
+            {solutionSteps.map((step, index) => (
+                <div key={index} className="border border-primary/30 rounded-md p-4 bg-card/50">
+                    <Typewriter
+                        text={`Adım ${step.stepNumber}: ${step.explanation}`}
+                        speed={10}
+                        onComplete={() => {
+                            setCompletedSteps(prev => [...prev, step.stepNumber]);
+                        }}
+                    />
+                    {completedSteps.includes(step.stepNumber) && (
+                         <div className="font-code text-accent mt-2 p-2 bg-black/20 rounded-md">
+                            <Latex formula={step.formula} />
+                        </div>
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function Latex({ formula }: { formula: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const renderLatex = async () => {
+      try {
+        const katex = (await import('katex')).default;
+        if (ref.current) {
+          katex.render(formula, ref.current, {
+            throwOnError: false,
+            displayMode: true,
+          });
+        }
+      } catch (error) {
+        console.error("KaTeX yüklenirken veya işlenirken hata:", error);
+        if (ref.current) {
+          ref.current.textContent = formula;
+        }
+      }
+    };
+    renderLatex();
+  }, [formula]);
+
+  return <div ref={ref} />;
+}
+
+
 function FormContent() {
   const [state, formAction] = useActionState(getSolution, initialState);
   const [messages, setMessages] = useState<Message[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [isAiTyping, setIsAiTyping] = useState(false);
-  const [typingComplete, setTypingComplete] = useState(false);
+  const { pending } = useFormStatus();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const [fileData, setFileData] = useState<string | null>(null);
-  const { pending } = useFormStatus();
+
+  const [isAiTyping, setIsAiTyping] = useState(false);
+  const [typingComplete, setTypingComplete] = useState(false);
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -92,99 +148,115 @@ function FormContent() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setFileData(e.target?.result as string);
-        toast({
-          title: "Dosya hazır",
-          description: `"${file.name}" analiz edilmeye hazır. Bir soru ekleyin ve gönder'e basın.`,
-        });
-      };
-      reader.readAsDataURL(file);
-    } else if (file.type === 'application/pdf') {
-        try {
-            const pdfjs = await import('pdfjs-dist');
-            const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs');
-            pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-
+    const processFile = async (file: File) => {
+        if (file.type.startsWith('image/')) {
             const reader = new FileReader();
-            reader.onload = async (e) => {
-                const arrayBuffer = e.target?.result as ArrayBuffer;
-                if (arrayBuffer) {
-                    try {
-                        const pdf: PDFDocumentProxy = await pdfjs.getDocument(new Uint8Array(arrayBuffer)).promise;
-                        let fullText = '';
-                        for (let i = 1; i <= pdf.numPages; i++) {
-                            const page = await pdf.getPage(i);
-                            const textContent = await page.getTextContent();
-                            fullText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
-                        }
-                        
-                        const textAsDataUri = `data:text/plain;base64,${btoa(unescape(encodeURIComponent(fullText)))}`;
-
-                        setFileData(textAsDataUri);
-                        toast({
-                          title: "PDF dosyası okundu",
-                          description: `"${file.name}" içeriği analiz edilmeye hazır.`,
-                        });
-                    } catch (error) {
-                        console.error("PDF okunurken hata oluştu:", error);
-                        toast({
-                            variant: 'destructive',
-                            title: 'PDF Okuma Hatası',
-                            description: 'PDF dosyası işlenirken bir sorun oluştu.',
-                        });
-                    }
-                }
+            reader.onload = (e) => {
+                setFileData(e.target?.result as string);
+                toast({
+                    title: "Dosya hazır",
+                    description: `"${file.name}" analiz edilmeye hazır. Bir soru ekleyin ve gönder'e basın.`,
+                });
             };
-            reader.readAsArrayBuffer(file);
-        } catch (error) {
-            console.error("pdfjs-dist yüklenirken hata oluştu:", error);
+            reader.readAsDataURL(file);
+        } else if (file.type === 'application/pdf') {
+            try {
+                const pdfjs = await import('pdfjs-dist');
+                const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs');
+                pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const arrayBuffer = e.target?.result as ArrayBuffer;
+                    if (arrayBuffer) {
+                        try {
+                            const pdf: PDFDocumentProxy = await pdfjs.getDocument(new Uint8Array(arrayBuffer)).promise;
+                            let fullText = '';
+                            for (let i = 1; i <= pdf.numPages; i++) {
+                                const page = await pdf.getPage(i);
+                                const textContent = await page.getTextContent();
+                                fullText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
+                            }
+                            
+                            const textAsDataUri = `data:text/plain;base64,${btoa(unescape(encodeURIComponent(fullText)))}`;
+
+                            setFileData(textAsDataUri);
+                            toast({
+                                title: "PDF dosyası okundu",
+                                description: `"${file.name}" içeriği analiz edilmeye hazır.`,
+                            });
+                        } catch (error) {
+                            console.error("PDF okunurken hata oluştu:", error);
+                            toast({
+                                variant: 'destructive',
+                                title: 'PDF Okuma Hatası',
+                                description: 'PDF dosyası işlenirken bir sorun oluştu.',
+                            });
+                        }
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            } catch (error) {
+                console.error("pdfjs-dist yüklenirken hata oluştu:", error);
+                toast({
+                    variant: 'destructive',
+                    title: 'PDF Yükleyici Hatası',
+                    description: 'PDF işleyici yüklenemedi. Lütfen tekrar deneyin.',
+                });
+            }
+        } else {
             toast({
                 variant: 'destructive',
-                title: 'PDF Yükleyici Hatası',
-                description: 'PDF işleyici yüklenemedi. Lütfen tekrar deneyin.',
+                title: 'Desteklenmeyen Dosya Türü',
+                description: 'Lütfen bir resim (JPEG, PNG) veya PDF dosyası seçin.',
             });
         }
-    } else {
-        toast({
-            variant: 'destructive',
-            title: 'Desteklenmeyen Dosya Türü',
-            description: 'Lütfen bir resim (JPEG, PNG) veya PDF dosyası seçin.',
-        });
-    }
+    };
+    
+    await processFile(file);
 
     if(event.target) {
       event.target.value = '';
     }
   };
-
+  
   useEffect(() => {
     if (state.id === 0) return;
 
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage && lastMessage.id > state.id) return;
+    // Use a more robust way to prevent duplicate message processing
+    const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : 0;
+    if (lastMessageId >= state.id + 2) return;
 
     const userMsg: Message = { id: state.id, type: 'user', content: `> ${state.question}` };
 
     if (state.status === 'success' && state.question && state.solution) {
+      setIsAiTyping(true);
       setTypingComplete(false);
       
-      setIsAiTyping(true);
       const aiMsg: Message = {
         id: state.id + 1,
         type: 'ai',
-        content: <Typewriter text={state.solution} onComplete={() => {
+        content: <AiSolution solutionSteps={state.solution} />,
+      };
+      
+      // Check if user message already exists
+      const userMsgExists = messages.some(msg => msg.id === userMsg.id);
+      
+      setMessages(prev => userMsgExists ? [...prev, aiMsg] : [...prev, userMsg, aiMsg]);
+
+      // Delay verification message until after solution is fully displayed
+      const totalTypingTime = (state.solution.reduce((acc, s) => acc + s.explanation.length, 0)) * 10 + state.solution.length * 500;
+      setTimeout(() => {
           setIsAiTyping(false);
           setTypingComplete(true);
-        }} />,
-      };
-      setMessages(prev => [...prev, userMsg, aiMsg]);
+      }, totalTypingTime);
+      
       formRef.current?.reset();
       setFileData(null);
+
     } else if (state.status === 'error' && state.error) {
-      const errorMsg: Message = {
+       const userMsgExists = messages.some(msg => msg.id === userMsg.id);
+       const errorMsg: Message = {
         id: state.id + 1,
         type: 'verification',
         content: (
@@ -194,26 +266,31 @@ function FormContent() {
           </div>
         )
       };
-      setMessages(prev => [...prev, userMsg, errorMsg]);
+      setMessages(prev => userMsgExists ? [...prev, errorMsg] : [...prev, userMsg, errorMsg]);
       formRef.current?.reset();
       setFileData(null);
+      setIsAiTyping(false);
     }
   }, [state]);
 
   useEffect(() => {
-    if (typingComplete && state.status === 'success' && messages[messages.length - 1]?.type !== 'verification') {
-        const verificationMsg: Message = {
-            id: state.id + 2,
-            type: 'verification',
-            content: (
-                <div className="flex items-center gap-2">
-                    {state.isCorrect ? <CheckCircle2 className="text-green-500" /> : <XCircle className="text-red-500" />}
-                    <span>{state.verificationDetails}</span>
-                </div>
-            )
-        };
-        setMessages(prev => [...prev, verificationMsg]);
-        setTypingComplete(false);
+    if (typingComplete && state.status === 'success' && state.isCorrect !== undefined) {
+        const lastMessage = messages[messages.length - 1];
+        // Ensure verification message is not already present
+        if (lastMessage?.type !== 'verification') {
+            const verificationMsg: Message = {
+                id: state.id + 2,
+                type: 'verification',
+                content: (
+                    <div className="flex items-center gap-2">
+                        {state.isCorrect ? <CheckCircle2 className="text-green-500" /> : <XCircle className="text-red-500" />}
+                        <span>{state.verificationDetails}</span>
+                    </div>
+                )
+            };
+            setMessages(prev => [...prev, verificationMsg]);
+        }
+        setTypingComplete(false); // Reset for next submission
     }
   }, [typingComplete, state, messages]);
 
@@ -235,8 +312,7 @@ function FormContent() {
               {msg.content}
             </div>
           ))}
-           {isAiTyping && <div className="text-foreground font-code text-sm blinking-cursor"></div>}
-           {pending && !isAiTyping && <BriefingDisplay />}
+           {pending && <BriefingDisplay />}
         </div>
       </ScrollArea>
       <form ref={formRef} action={formAction} className="relative mt-4">
@@ -275,8 +351,6 @@ function FormContent() {
 
 
 export function MathTerminal() {
-  // useFormStatus must be used within a <form> component.
-  // We can wrap the content in a new component.
   return (
     <Card className="w-full max-w-3xl h-[80vh] flex flex-col bg-card/80 backdrop-blur-sm border-primary/20 shadow-lg shadow-primary/10">
       <CardHeader>
