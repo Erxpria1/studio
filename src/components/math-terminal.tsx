@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useEffect, useRef, useState, useMemo } from 'react';
 import { useFormStatus } from 'react-dom';
 import { submitQuestion, getNextStep, type FormState } from '@/app/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Typewriter } from '@/components/typewriter';
-import { CheckCircle2, XCircle, Send, Paperclip, Loader, Folder } from 'lucide-react';
+import { CheckCircle2, XCircle, Send, Paperclip, Loader, ArrowRightCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -20,7 +20,7 @@ type Message = {
   stepNumber?: number;
 };
 
-const initialState: FormState = {
+const initialFormState: FormState = {
   id: '0',
   status: 'initial',
 };
@@ -62,10 +62,7 @@ function SubmitButton() {
   return (
     <Button type="submit" size="icon" disabled={pending} className="bg-accent hover:bg-accent/80 text-accent-foreground">
       {pending ? (
-        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
+        <Loader className="animate-spin h-4 w-4" />
       ) : (
         <Send className="h-4 w-4" />
       )}
@@ -106,10 +103,14 @@ function Latex({ formula }: { formula: string }) {
 
 
 function FormContent() {
-  const [state, formAction] = useActionState(submitQuestion, initialState);
-  const [nextStepState, nextStepAction] = useActionState(getNextStep, state);
+  const [submitState, submitAction, isSubmitting] = useActionState(submitQuestion, initialFormState);
+  const [nextStepState, nextStepAction, isGettingNextStep] = useActionState(getNextStep, initialFormState);
 
-  const activeState = state.status !== 'initial' ? state : nextStepState;
+  const activeState = useMemo(() => {
+    if (nextStepState.status !== 'initial') return nextStepState;
+    return submitState;
+  }, [submitState, nextStepState]);
+
 
   const [messages, setMessages] = useState<Message[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
@@ -203,20 +204,28 @@ function FormContent() {
   useEffect(() => {
     if (activeState.id === '0') return;
 
+    const lastMessage = messages[messages.length - 1];
+    const isBriefingActive = lastMessage?.type === 'briefing';
+
     if (activeState.status === 'error') {
-      setMessages(prev => [
-          ...prev.filter(m => m.type !== 'briefing'),
+      const newMessages = isBriefingActive ? messages.slice(0, -1) : messages;
+      setMessages([
+          ...newMessages,
           { id: activeState.id + '-error', type: 'error', content: `Hata: ${activeState.error}` }
       ]);
       formRef.current?.reset();
       setFileData(null);
     } else if (activeState.status === 'step_by_step' && activeState.currentStep) {
-        const { currentStep, currentStepIndex } = activeState;
+        const { currentStep } = activeState;
         
-        const userMsgExists = messages.some(msg => msg.type === 'user');
-        const initialMessages: Message[] = [];
+        const newMessages = [...messages];
+        if (isBriefingActive) {
+            newMessages.pop();
+        }
+
+        const userMsgExists = newMessages.some(msg => msg.type === 'user');
         if (!userMsgExists && activeState.question) {
-            initialMessages.push({ id: activeState.id + '-user', type: 'user', content: `> ${activeState.question}` });
+            newMessages.unshift({ id: activeState.id + '-user', type: 'user', content: `> ${activeState.question}` });
         }
 
         const newStepMessage: Message = {
@@ -236,49 +245,51 @@ function FormContent() {
             stepNumber: currentStep.stepNumber
         };
         
-        setMessages(prev => {
-            const newMessages = prev.filter(m => m.type !== 'briefing');
-            const existingStepIndex = newMessages.findIndex(m => m.id === newStepMessage.id);
-            if (existingStepIndex > -1) {
-                newMessages[existingStepIndex] = newStepMessage;
-            } else {
-                newMessages.push(newStepMessage);
-            }
-            if (initialMessages.length > 0 && !newMessages.some(m => m.type === 'user')) {
-                return [...initialMessages, ...newMessages];
-            }
-            return newMessages;
-        });
+        const existingStepIndex = newMessages.findIndex(m => m.id === newStepMessage.id);
+        if (existingStepIndex > -1) {
+            newMessages[existingStepIndex] = newStepMessage;
+        } else {
+            newMessages.push(newStepMessage);
+        }
+
+        setMessages(newMessages);
         
-        if (currentStepIndex === 0) {
+        if (activeState.currentStepIndex === 0) {
             formRef.current?.reset();
             setFileData(null);
         }
     } else if (activeState.status === 'complete') {
+        const newMessages = isBriefingActive ? messages.slice(0, -1) : messages;
         const verificationMsg: Message = {
             id: activeState.id + '-verification',
             type: 'verification',
             content: (
-                <div className="flex items-center gap-2">
-                    {activeState.isCorrect ? <CheckCircle2 className="text-green-500" /> : <XCircle className="text-red-500" />}
+                <div className="flex items-start gap-2 p-4 border border-primary/20 rounded-md bg-black/20">
+                    {activeState.isCorrect ? <CheckCircle2 className="text-green-500 mt-1 h-5 w-5 flex-shrink-0" /> : <XCircle className="text-red-500 mt-1 h-5 w-5 flex-shrink-0" />}
                     <Typewriter text={activeState.verificationDetails || ''} speed={10} />
                 </div>
             )
         };
-        setMessages(prev => [...prev.filter(m => m.type !== 'briefing'), verificationMsg]);
+        setMessages([...newMessages, verificationMsg]);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeState]);
 
   const handleSubmit = (formData: FormData) => {
     const question = formData.get('question');
-    if (!question) return;
-    setMessages([{ id: Date.now().toString(), type: 'user', content: `> ${question}` }, { id: 'briefing', type: 'briefing', content: <BriefingDisplay />}]);
-    formAction(formData);
+    if (!question || isSubmitting) return;
+
+    setMessages([
+        { id: Date.now().toString() + '-user', type: 'user', content: `> ${question}` },
+        { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}
+    ]);
+    submitAction(formData);
   };
   
   const handleNextStep = () => {
-    nextStepAction(new FormData());
-    setMessages(prev => [...prev, { id: 'briefing', type: 'briefing', content: <BriefingDisplay />}])
+    if (isGettingNextStep) return;
+    nextStepAction();
+    setMessages(prev => [...prev, { id: Date.now().toString() + '-briefing', type: 'briefing', content: <BriefingDisplay />}])
   };
 
   useEffect(() => {
@@ -286,13 +297,14 @@ function FormContent() {
   }, [messages, activeState.status]);
 
   const showNextStepButton = activeState.status === 'step_by_step' && activeState.currentStepIndex! < activeState.totalSteps! - 1;
-  const isProcessing = activeState.status === 'analyzing' || activeState.status === 'verifying' || (messages.some(m => m.type === 'briefing'));
-  
+  const isProcessing = isSubmitting || isGettingNextStep;
+  const isTerminalOccupied = activeState.status !== 'initial' && activeState.status !== 'complete' && activeState.status !== 'error';
+
   return (
     <>
       <ScrollArea className="flex-1 pr-4 -mr-4" viewportRef={viewportRef}>
         <div className="flex flex-col gap-4">
-          {messages.map((msg) => (
+          {messages.map((msg, index) => (
             <div key={msg.id} className={cn(
               'font-code text-sm relative',
               msg.type === 'user' && 'text-primary',
@@ -302,9 +314,12 @@ function FormContent() {
               msg.type === 'briefing' && 'text-primary'
             )}>
               {msg.content}
-              {msg.type === 'ai_step' && showNextStepButton && activeState.currentStepIndex === msg.stepNumber! - 1 && (
-                 <Button onClick={handleNextStep} disabled={isProcessing} size="icon" className="absolute bottom-2 right-2 bg-yellow-500 hover:bg-yellow-600 text-black rounded-full h-10 w-10">
-                    <Folder className="h-5 w-5" />
+              {msg.type === 'ai_step' && 
+                activeState.status === 'step_by_step' && 
+                activeState.currentStep?.stepNumber === msg.stepNumber && 
+                activeState.currentStepIndex! < activeState.totalSteps! - 1 && (
+                 <Button onClick={handleNextStep} disabled={isProcessing} size="icon" variant="ghost" className="absolute bottom-2 right-2 text-yellow-500 hover:text-yellow-400 h-8 w-8">
+                    <ArrowRightCircle className="h-6 w-6" />
                  </Button>
               )}
             </div>
@@ -312,7 +327,6 @@ function FormContent() {
         </div>
       </ScrollArea>
       <div className="mt-4">
-        
         <form ref={formRef} action={handleSubmit} className="relative">
           <input type="hidden" name="fileData" value={fileData || ''} />
           <div className="relative flex w-full items-center">
@@ -321,7 +335,7 @@ function FormContent() {
               placeholder="> Bir matematik sorusu sorun... örn., 'x için çöz: 2x + 5 = 15'"
               className="bg-background/50 border-primary/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-24 font-code"
               autoComplete="off"
-              disabled={isProcessing}
+              disabled={isProcessing || isTerminalOccupied}
             />
             <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1">
               <input
@@ -331,13 +345,13 @@ function FormContent() {
                 className="hidden"
                 accept="image/*,application/pdf"
               />
-              <Button type="button" size="icon" variant="ghost" onClick={handleUploadClick} disabled={isProcessing} className="h-8 w-8 text-accent hover:text-accent/80">
+              <Button type="button" size="icon" variant="ghost" onClick={handleUploadClick} disabled={isProcessing || isTerminalOccupied} className="h-8 w-8 text-accent hover:text-accent/80">
                 <Paperclip className="h-4 w-4" />
               </Button>
               <SubmitButton />
             </div>
           </div>
-          {fileData && (
+          {fileData && !isTerminalOccupied && (
             <div className="mt-2 text-xs text-muted-foreground">
               Bir dosya eklendi. Kaldırmak için alanı temizleyin veya yeni bir dosya seçin.
             </div>
