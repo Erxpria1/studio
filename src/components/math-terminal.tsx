@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { getSolution, type SolutionState } from '@/app/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -50,15 +50,6 @@ export function MathTerminal() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const [fileData, setFileData] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const [pdfjsLib, setPdfjsLib] = useState<any>(null);
-
-  useEffect(() => {
-    import('pdfjs-dist').then(pdfjs => {
-      pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
-      setPdfjsLib(pdfjs);
-    });
-  }, []);
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -79,45 +70,49 @@ export function MathTerminal() {
       };
       reader.readAsDataURL(file);
     } else if (file.type === 'application/pdf') {
-        if (!pdfjsLib) {
+        try {
+            const pdfjs = await import('pdfjs-dist');
+            pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const arrayBuffer = e.target?.result as ArrayBuffer;
+                if (arrayBuffer) {
+                    try {
+                        const pdf = await pdfjs.getDocument(new Uint8Array(arrayBuffer)).promise;
+                        let fullText = '';
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const textContent = await page.getTextContent();
+                            fullText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
+                        }
+                        
+                        const textAsDataUri = `data:text/plain;base64,${btoa(unescape(encodeURIComponent(fullText)))}`;
+
+                        setFileData(textAsDataUri);
+                        toast({
+                          title: "PDF dosyası okundu",
+                          description: `"${file.name}" içeriği analiz edilmeye hazır.`,
+                        });
+                    } catch (error) {
+                        console.error("PDF okunurken hata oluştu:", error);
+                        toast({
+                            variant: 'destructive',
+                            title: 'PDF Okuma Hatası',
+                            description: 'PDF dosyası işlenirken bir sorun oluştu.',
+                        });
+                    }
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            console.error("pdfjs-dist yüklenirken hata oluştu:", error);
             toast({
                 variant: 'destructive',
-                title: 'PDF görüntüleyici hazırlanıyor',
-                description: 'Lütfen birkaç saniye sonra tekrar deneyin.',
+                title: 'PDF Yükleyici Hatası',
+                description: 'PDF işleyici yüklenemedi. Lütfen tekrar deneyin.',
             });
-            return;
         }
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const arrayBuffer = e.target?.result as ArrayBuffer;
-            if (arrayBuffer) {
-                try {
-                    const pdf = await pdfjsLib.getDocument(new Uint8Array(arrayBuffer)).promise;
-                    let fullText = '';
-                    for (let i = 1; i <= pdf.numPages; i++) {
-                        const page = await pdf.getPage(i);
-                        const textContent = await page.getTextContent();
-                        fullText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
-                    }
-                    
-                    const textAsDataUri = `data:text/plain;base64,${btoa(unescape(encodeURIComponent(fullText)))}`;
-
-                    setFileData(textAsDataUri);
-                    toast({
-                      title: "PDF dosyası okundu",
-                      description: `"${file.name}" içeriği analiz edilmeye hazır.`,
-                    });
-                } catch (error) {
-                    console.error("PDF okunurken hata oluştu:", error);
-                    toast({
-                        variant: 'destructive',
-                        title: 'PDF Okuma Hatası',
-                        description: 'PDF dosyası işlenirken bir sorun oluştu.',
-                    });
-                }
-            }
-        };
-        reader.readAsArrayBuffer(file);
     } else {
         toast({
             variant: 'destructive',
