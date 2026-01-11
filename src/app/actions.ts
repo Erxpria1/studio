@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 const MathQuestionSchema = z.object({
   question: z.string().min(3, "Soru en az 3 karakter uzunluğunda olmalıdır."),
+  fileData: z.string().optional(),
 });
 
 export type SolutionState = {
@@ -24,6 +25,7 @@ export async function getSolution(
 ): Promise<SolutionState> {
   const validatedFields = MathQuestionSchema.safeParse({
     question: formData.get('question'),
+    fileData: formData.get('fileData'),
   });
 
   const question = formData.get('question') as string;
@@ -37,10 +39,10 @@ export async function getSolution(
     };
   }
   
-  const validQuestion = validatedFields.data.question;
+  const { question: validQuestion, fileData } = validatedFields.data;
 
   try {
-    const solutionResult = await generateStepByStepSolution({ question: validQuestion });
+    const solutionResult = await generateStepByStepSolution({ question: validQuestion, fileData });
     const aiSolution = solutionResult.solution;
     
     const verificationResult = await verifyAiGeneratedSolution({ question: validQuestion, aiSolution });

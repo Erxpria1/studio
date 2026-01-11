@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
 import { useFormStatus } from 'react-dom';
 import { getSolution, type SolutionState } from '@/app/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +11,9 @@ import { Typewriter } from '@/components/typewriter';
 import { CheckCircle2, XCircle, AlertTriangle, Send, Paperclip } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import * as pdfjsLib from 'pdfjs-dist';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 type Message = {
   id: number;
@@ -49,18 +52,70 @@ export function MathTerminal() {
   const [typingComplete, setTypingComplete] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const [fileData, setFileData] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      toast({
-        title: "Dosya hazır",
-        description: `"${file.name}" analiz edilmeye hazır. Bir soru ekleyin ve gönder'e basın.`,
-      });
+    if (!file) return;
+
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setFileData(e.target?.result as string);
+        toast({
+          title: "Dosya hazır",
+          description: `"${file.name}" analiz edilmeye hazır. Bir soru ekleyin ve gönder'e basın.`,
+        });
+      };
+      reader.readAsDataURL(file);
+    } else if (file.type === 'application/pdf') {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const arrayBuffer = e.target?.result as ArrayBuffer;
+            if (arrayBuffer) {
+                try {
+                    const pdf = await pdfjsLib.getDocument(new Uint8Array(arrayBuffer)).promise;
+                    let fullText = '';
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const textContent = await page.getTextContent();
+                        fullText += textContent.items.map(item => item.str).join(' ') + '\n';
+                    }
+                    
+                    const textAsDataUri = `data:text/plain;base64,${btoa(unescape(encodeURIComponent(fullText)))}`;
+
+                    setFileData(textAsDataUri);
+                    toast({
+                      title: "PDF dosyası okundu",
+                      description: `"${file.name}" içeriği analiz edilmeye hazır.`,
+                    });
+                } catch (error) {
+                    console.error("PDF okunurken hata oluştu:", error);
+                    toast({
+                        variant: 'destructive',
+                        title: 'PDF Okuma Hatası',
+                        description: 'PDF dosyası işlenirken bir sorun oluştu.',
+                    });
+                }
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    } else {
+        toast({
+            variant: 'destructive',
+            title: 'Desteklenmeyen Dosya Türü',
+            description: 'Lütfen bir resim (JPEG, PNG) veya PDF dosyası seçin.',
+        });
+    }
+
+    // Reset file input to allow re-selection of the same file
+    if(event.target) {
+      event.target.value = '';
     }
   };
 
@@ -68,6 +123,7 @@ export function MathTerminal() {
     if (state.id === 0) return; // Initial state, do nothing
 
     const lastMessage = messages[messages.length - 1];
+    // This is a hacky way to prevent duplicate messages. A better solution would be to use unique IDs.
     if (lastMessage && lastMessage.id > state.id) return;
 
     if (state.status === 'success' && state.question && state.solution) {
@@ -85,6 +141,7 @@ export function MathTerminal() {
       };
       setMessages(prev => [...prev, userMsg, aiMsg]);
       formRef.current?.reset();
+      setFileData(null);
     } else if (state.status === 'error' && state.error) {
       const userMsg: Message = { id: state.id, type: 'user', content: `> ${state.question}` };
       const errorMsg: Message = {
@@ -99,6 +156,7 @@ export function MathTerminal() {
       };
       setMessages(prev => [...prev, userMsg, errorMsg]);
       formRef.current?.reset();
+      setFileData(null);
     }
   }, [state]);
 
@@ -148,6 +206,7 @@ export function MathTerminal() {
           </div>
         </ScrollArea>
         <form ref={formRef} action={formAction} className="relative mt-4">
+          <input type="hidden" name="fileData" value={fileData || ''} />
           <div className="relative flex w-full items-center">
             <Input
               name="question"
@@ -162,7 +221,7 @@ export function MathTerminal() {
                 ref={fileInputRef}
                 onChange={handleFileChange}
                 className="hidden"
-                accept="image/*"
+                accept="image/*,application/pdf"
               />
               <Button type="button" size="icon" variant="ghost" onClick={handleUploadClick} disabled={useFormStatus().pending} className="h-8 w-8 text-accent hover:text-accent/80">
                 <Paperclip className="h-4 w-4" />
@@ -170,6 +229,11 @@ export function MathTerminal() {
               <SubmitButton />
             </div>
           </div>
+           {fileData && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              Bir dosya eklendi. Kaldırmak için alanı temizleyin veya yeni bir dosya seçin.
+            </div>
+          )}
         </form>
       </CardContent>
     </Card>

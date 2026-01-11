@@ -13,6 +13,7 @@ import { checkTurkish } from './turkish-checker';
 
 const GenerateStepByStepSolutionInputSchema = z.object({
   question: z.string().describe('The mathematical question to be solved.'),
+  fileData: z.string().optional().describe("A file (image or PDF content) as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'.")
 });
 export type GenerateStepByStepSolutionInput = z.infer<typeof GenerateStepByStepSolutionInputSchema>;
 
@@ -29,7 +30,11 @@ const prompt = ai.definePrompt({
   name: 'generateStepByStepSolutionPrompt',
   input: {schema: GenerateStepByStepSolutionInputSchema},
   output: {schema: GenerateStepByStepSolutionOutputSchema},
-  prompt: `Sen adım adım çözüm açıklama konusunda uzman bir matematik çözücüsün. Aşağıdaki matematik sorusuna ayrıntılı, adım adım bir çözüm sun:\n\nSoru: {{{question}}}`,
+  prompt: `Sen adım adım çözüm açıklama konusunda uzman bir matematik çözücüsün. Aşağıdaki matematik sorusuna ayrıntılı, adım adım bir çözüm sun:\n\nSoru: {{{question}}}{{#if fileData}}
+
+Ayrıca soruyu çözmek için aşağıdaki dosyayı da kullan:
+{{media url=fileData}}
+{{/if}}`,
 });
 
 const generateStepByStepSolutionFlow = ai.defineFlow(
