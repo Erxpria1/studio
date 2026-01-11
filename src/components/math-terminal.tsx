@@ -8,8 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Typewriter } from '@/components/typewriter';
-import { CheckCircle2, XCircle, AlertTriangle, Send } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertTriangle, Send, Paperclip } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
 
 type Message = {
   id: number;
@@ -26,7 +27,7 @@ const initialState: SolutionState = {
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" size="icon" disabled={pending} className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 bg-accent hover:bg-accent/80 text-accent-foreground">
+    <Button type="submit" size="icon" disabled={pending} className="bg-accent hover:bg-accent/80 text-accent-foreground">
       {pending ? (
         <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -46,6 +47,22 @@ export function MathTerminal() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [typingComplete, setTypingComplete] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      toast({
+        title: "File ready",
+        description: `"${file.name}" is ready to be analyzed. Add a question and hit send.`,
+      });
+    }
+  };
 
   useEffect(() => {
     if (state.id === 0) return; // Initial state, do nothing
@@ -131,14 +148,28 @@ export function MathTerminal() {
           </div>
         </ScrollArea>
         <form ref={formRef} action={formAction} className="relative mt-4">
-          <Input
-            name="question"
-            placeholder="> Ask a math question... e.g., 'Solve for x: 2x + 5 = 15'"
-            className="bg-background/50 border-accent/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-12 font-code"
-            autoComplete="off"
-            disabled={useFormStatus().pending}
-          />
-          <SubmitButton />
+          <div className="relative flex w-full items-center">
+            <Input
+              name="question"
+              placeholder="> Ask a math question... e.g., 'Solve for x: 2x + 5 = 15'"
+              className="bg-background/50 border-accent/50 focus-visible:ring-accent focus-visible:border-accent text-base pr-24 font-code"
+              autoComplete="off"
+              disabled={useFormStatus().pending}
+            />
+            <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1">
+               <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                accept="image/*"
+              />
+              <Button type="button" size="icon" variant="ghost" onClick={handleUploadClick} disabled={useFormStatus().pending} className="h-8 w-8 text-accent hover:text-accent/80">
+                <Paperclip className="h-4 w-4" />
+              </Button>
+              <SubmitButton />
+            </div>
+          </div>
         </form>
       </CardContent>
     </Card>
