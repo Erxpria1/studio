@@ -1,7 +1,7 @@
 'use client';
 
-import { useFormState, useFormStatus } from 'react-dom';
-import { useEffect, useRef, useState } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { getSolution, type SolutionState } from '@/app/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -41,7 +41,7 @@ function SubmitButton() {
 }
 
 export function MathTerminal() {
-  const [state, formAction] = useFormState(getSolution, initialState);
+  const [state, formAction] = useActionState(getSolution, initialState);
   const [messages, setMessages] = useState<Message[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
